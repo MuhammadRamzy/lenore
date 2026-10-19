@@ -1,0 +1,50 @@
+{
+  "name": "lenore-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npm run build:client && wrangler dev --ip 127.0.0.1 --port 8787",
+    "dev:ui": "vite --host 127.0.0.1",
+    "build:client": "vite build",
+    "build": "npm run typecheck && npm run build:client && wrangler deploy --dry-run --outdir dist/worker",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "lint": "eslint src tests scripts",
+    "db:migrate:local": "wrangler d1 migrations apply lenore-local --local",
+    "setup:local": "node scripts/setup-local.mjs",
+    "format": "prettier --write src tests scripts/*.mjs *.json *.jsonc *.ts *.js *.md docs .impeccable/*.json .impeccable/*.md"
+  },
+  "dependencies": {
+    "@fontsource/manrope": "^5.2.8",
+    "@pdf-lib/fontkit": "1.1.1",
+    "hono": "4.13.13",
+    "lucide-react": "^1.23.0",
+    "pdf-lib": "1.17.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "regenerator-runtime": "0.14.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.14.0",
+    "@cloudflare/vitest-plugin": "1.4.5",
+    "@cloudflare/workers-types": "latest",
+    "@eslint/js": "^9.39.0",
+    "@playwright/test": "1.64.1",
+    "@types/node": "^24",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "6.1.2",
+    "eslint": "^9.39.0",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "globals": "^16",
+    "prettier": "^3.6",
+    "typescript": "^5.9",
+    "typescript-eslint": "^8.46",
+    "vite": "8.3.4",
+    "vitest": "4.1.12",
+    "wrangler": "4.151.2"
+  }
+}

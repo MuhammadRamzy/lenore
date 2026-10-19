@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars*
+.env*
+!.env.example
+playwright-report/
+test-results/
+.impeccable/review/
+.impeccable/cache/
+*.tsbuildinfo
+local-access.txt
