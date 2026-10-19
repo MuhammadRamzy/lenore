@@ -148,13 +148,16 @@ type SiteData = {
   categories: CategorySummary[];
 };
 /** Website data. Product details are exposed only when the catalogue is public. */
-async function siteData(c: AppContext): Promise<SiteData> {
+async function siteData(c: AppContext, withProducts = true): Promise<SiteData> {
   const [mode, settings, rows] = await Promise.all([
     accessMode(c.env.DB),
     readSettings(c.env.DB),
-    c.env.DB.prepare(
-      "SELECT * FROM products WHERE published=1 ORDER BY category,name LIMIT 5000",
-    ).all<ProductRow>(),
+    // Pages without product content (about, contact) skip the product read.
+    withProducts
+      ? c.env.DB.prepare(
+          "SELECT * FROM products WHERE published=1 ORDER BY category,name LIMIT 5000",
+        ).all<ProductRow>()
+      : Promise.resolve({ results: [] as ProductRow[] }),
   ]);
   const demo = c.env.DEMO_MODE === "true";
   const all = rows.results.map((r) => catalogueProduct(r, "public"));
@@ -280,6 +283,31 @@ async function renderSite(
 }
 
 const routes = new Hono<AppEnv>();
+/**
+ * Public pages are identical for every visitor, so production serves them
+ * from Cloudflare's edge cache for up to 60 s instead of re-rendering.
+ */
+routes.use("*", async (c, next) => {
+  const path = new URL(c.req.url).pathname;
+  if (
+    !c.env.SITE_ORIGIN ||
+    c.req.method !== "GET" ||
+    !/^\/($|collections|products\/|about$|contact$|sitemap\.xml$|robots\.txt$)/.test(
+      path,
+    )
+  )
+    return next();
+  const cache = (caches as unknown as { default: Cache }).default;
+  const key = new Request(c.req.url, { method: "GET" });
+  const hit = await cache.match(key);
+  if (hit) return hit;
+  await next();
+  if (
+    c.res.status === 200 &&
+    /s-maxage/.test(c.res.headers.get("Cache-Control") ?? "")
+  )
+    c.executionCtx.waitUntil(cache.put(key, c.res.clone()));
+});
 const common = (d: SiteData) => ({
   whatsapp: d.whatsapp,
   demo: d.demo,
@@ -409,7 +437,7 @@ routes.get("/products/:slug", async (c) => {
   );
 });
 routes.get("/about", async (c) => {
-  const d = await siteData(c);
+  const d = await siteData(c, false);
   return renderSite(
     c,
     { ...common(d), kind: "about" },
@@ -423,7 +451,7 @@ routes.get("/about", async (c) => {
   );
 });
 routes.get("/contact", async (c) => {
-  const d = await siteData(c);
+  const d = await siteData(c, false);
   return renderSite(
     c,
     { ...common(d), kind: "contact" },
@@ -528,21 +556,23 @@ routes.get("/pos/*", shell("Lenore Billing", apps.pos));
 routes.get("/manage", shell("Lenore Admin", apps.admin));
 routes.get("/manage/*", shell("Lenore Admin", apps.admin));
 
-routes.get("/robots.txt", (c) =>
-  c.text(
+routes.get("/robots.txt", (c) => {
+  c.header("Cache-Control", "public, max-age=3600, s-maxage=3600");
+  return c.text(
     [
       "User-agent: *",
       "Allow: /",
       "Disallow: /api/",
       "Disallow: /manage",
       "Disallow: /catalogue",
+      "Disallow: /pos",
       "Disallow: /q/",
       "",
       `Sitemap: ${origin(c)}/sitemap.xml`,
       "",
     ].join("\n"),
-  ),
-);
+  );
+});
 routes.get("/sitemap.xml", async (c) => {
   const d = await siteData(c);
   const base = origin(c);
@@ -561,6 +591,7 @@ routes.get("/sitemap.xml", async (c) => {
     ...d.products.map((p) => entry(`/products/${p.slug}`, p.updatedAt)),
   ];
   c.header("Content-Type", "application/xml; charset=utf-8");
+  c.header("Cache-Control", "public, max-age=0, s-maxage=600");
   return c.body(
     `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.join("")}</urlset>\n`,
   );

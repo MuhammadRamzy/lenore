@@ -425,8 +425,16 @@ async function createInvoice(c: AppContext, d: InvoiceInput) {
       : fail("This invoice ID was already used for a different bill.");
   if (financialYear(d.date) !== d.fy)
     return fail("The invoice date does not match its financial year.", 400);
-  if (!d.offline && d.date !== indiaToday())
-    return fail("Online invoices are dated today.", 400);
+  // Online bills are dated today; a day either side tolerates counter clocks around midnight.
+  const dayMs = 86400000;
+  if (
+    !d.offline &&
+    Math.abs(Date.parse(d.date) - Date.parse(indiaToday())) > dayMs
+  )
+    return fail(
+      "The invoice date must be today. Check the counter's clock.",
+      400,
+    );
   const settings = await erpSettings(db);
   const block = await db
     .prepare(
@@ -780,13 +788,17 @@ async function createCreditNote(
   const settings = await erpSettings(db);
   const date = indiaToday();
   const fy = financialYear(date);
-  const counter = await db
-    .prepare(
-      "INSERT INTO counters(name,value) VALUES(?,1) ON CONFLICT(name) DO UPDATE SET value=value+1 RETURNING value",
-    )
-    .bind(`CN-${fy}`)
-    .first<{ value: number }>();
-  const number = creditNoteNumber(settings.invoicePrefix, fy, counter!.value);
+  // The number is claimed inside the same atomic batch, so a failed return never leaves a gap.
+  const counterName = `CN-${fy}`;
+  const nextSeq = async () =>
+    ((
+      await db
+        .prepare("SELECT value FROM counters WHERE name=?")
+        .bind(counterName)
+        .first<{ value: number }>()
+    )?.value ?? 0) + 1;
+  let seq = await nextSeq();
+  let number = creditNoteNumber(settings.invoicePrefix, fy, seq);
   const actor = posActor(viewer);
   const cost = credit.every((l) => l.cost_paise !== null)
     ? credit.reduce((n, l) => n + l.cost_paise! * l.creditQty, 0)
@@ -795,126 +807,145 @@ async function createCreditNote(
   const restockIds = credit
     .filter((l) => l.restockQty > 0)
     .map((l) => l.product_id);
-  const result = await withStock(
-    db,
-    restockIds.length ? restockIds : [credit[0].product_id],
-    (stock) => {
-      const statements: D1PreparedStatement[] = [
-        db
-          .prepare(
-            `INSERT INTO credit_notes(id,number,invoice_id,date,reason,restock,lines_json,taxable,cgst,sgst,igst,total,actor)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-          )
-          .bind(
-            d.id,
-            number,
-            invoiceId,
-            date,
-            d.reason,
-            +d.restock,
-            JSON.stringify(
-              credit.map((l) => ({
-                lineNo: l.line_no,
-                code: l.code,
-                name: l.name,
-                qty: l.creditQty,
-                total: l.cTotal,
-                restocked: l.restockQty,
-              })),
-            ),
-            sum("cTaxable"),
-            sum("cCgst"),
-            sum("cSgst"),
-            sum("cIgst"),
-            total,
-            actor,
-          ),
-        db
-          .prepare(
-            `UPDATE invoices SET credited=credited+?,refunded=refunded+?,status=CASE WHEN credited+?>=total THEN 'cancelled' ELSE status END WHERE id=?`,
-          )
-          .bind(total, refundDue, total, invoiceId),
-        financeDocument(db, {
-          id: d.id,
-          kind: "sale_credit",
-          date,
-          dueDate: date,
-          number,
-          party: invoice.customer.name,
-          gstin: invoice.customer.gstin,
-          category: "Counter sales",
-          netMinor: sum("cTaxable"),
-          roundingMinor: total - linesTotal,
-          cgstMinor: sum("cCgst"),
-          sgstMinor: sum("cSgst"),
-          igstMinor: sum("cIgst"),
-          costMinor: parentCost ? cost : null,
-          supply: invoice.supply,
-          parentId: invoiceId,
-          notes: d.reason,
-        }),
-      ];
-      for (const l of credit) {
-        statements.push(
-          db
-            .prepare(
-              `UPDATE invoice_lines SET returned_qty=returned_qty+?,returned_total=returned_total+?,returned_taxable=returned_taxable+?,
-            returned_cgst=returned_cgst+?,returned_sgst=returned_sgst+?,returned_igst=returned_igst+? WHERE invoice_id=? AND line_no=?`,
-            )
-            .bind(
-              l.creditQty,
-              l.cTotal,
-              l.cTaxable,
-              l.cCgst,
-              l.cSgst,
-              l.cIgst,
-              invoiceId,
-              l.line_no,
-            ),
-        );
-        if (l.restockQty > 0)
-          statements.push(
-            movement(
-              db,
-              stock.get(l.product_id)!,
-              l.restockQty,
-              "return_in",
-              `Credit note ${number}`,
-              actor,
-            ),
-          );
-      }
-      if (refundDue > 0) {
-        const id = crypto.randomUUID();
-        statements.push(
-          db
-            .prepare(
-              "INSERT INTO payments(id,invoice_id,kind,method,amount,date,reference,shift_id,actor) VALUES(?,?,'refund',?,?,?,?,?,?)",
-            )
-            .bind(
-              id,
-              invoiceId,
-              d.refundMethod,
-              refundDue,
+  let result: Awaited<ReturnType<typeof withStock<boolean>>>;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      result = await withStock(
+        db,
+        restockIds.length ? restockIds : [credit[0].product_id],
+        (stock) => {
+          const statements: D1PreparedStatement[] = [
+            db
+              .prepare(
+                "INSERT INTO counters(name,value) VALUES(?,?) ON CONFLICT(name) DO UPDATE SET value=MAX(value,excluded.value)",
+              )
+              .bind(counterName, seq),
+            db
+              .prepare(
+                `INSERT INTO credit_notes(id,number,invoice_id,date,reason,restock,lines_json,taxable,cgst,sgst,igst,total,actor)
+              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+              )
+              .bind(
+                d.id,
+                number,
+                invoiceId,
+                date,
+                d.reason,
+                +d.restock,
+                JSON.stringify(
+                  credit.map((l) => ({
+                    lineNo: l.line_no,
+                    code: l.code,
+                    name: l.name,
+                    qty: l.creditQty,
+                    total: l.cTotal,
+                    restocked: l.restockQty,
+                  })),
+                ),
+                sum("cTaxable"),
+                sum("cCgst"),
+                sum("cSgst"),
+                sum("cIgst"),
+                total,
+                actor,
+              ),
+            db
+              .prepare(
+                `UPDATE invoices SET credited=credited+?,refunded=refunded+?,status=CASE WHEN credited+?>=total THEN 'cancelled' ELSE status END WHERE id=?`,
+              )
+              .bind(total, refundDue, total, invoiceId),
+            financeDocument(db, {
+              id: d.id,
+              kind: "sale_credit",
               date,
-              d.refundReference || number,
-              d.shiftId,
-              actor,
-            ),
-          financeSettlement(db, {
-            id,
-            documentId: invoiceId,
-            date,
-            amount: refundDue,
-            refund: true,
-            method: d.refundMethod,
-            reference: number,
-          }),
-        );
+              dueDate: date,
+              number,
+              party: invoice.customer.name,
+              gstin: invoice.customer.gstin,
+              category: "Counter sales",
+              netMinor: sum("cTaxable"),
+              roundingMinor: total - linesTotal,
+              cgstMinor: sum("cCgst"),
+              sgstMinor: sum("cSgst"),
+              igstMinor: sum("cIgst"),
+              costMinor: parentCost ? cost : null,
+              supply: invoice.supply,
+              parentId: invoiceId,
+              notes: d.reason,
+            }),
+          ];
+          for (const l of credit) {
+            statements.push(
+              db
+                .prepare(
+                  `UPDATE invoice_lines SET returned_qty=returned_qty+?,returned_total=returned_total+?,returned_taxable=returned_taxable+?,
+                returned_cgst=returned_cgst+?,returned_sgst=returned_sgst+?,returned_igst=returned_igst+? WHERE invoice_id=? AND line_no=?`,
+                )
+                .bind(
+                  l.creditQty,
+                  l.cTotal,
+                  l.cTaxable,
+                  l.cCgst,
+                  l.cSgst,
+                  l.cIgst,
+                  invoiceId,
+                  l.line_no,
+                ),
+            );
+            if (l.restockQty > 0)
+              statements.push(
+                movement(
+                  db,
+                  stock.get(l.product_id)!,
+                  l.restockQty,
+                  "return_in",
+                  `Credit note ${number}`,
+                  actor,
+                ),
+              );
+          }
+          if (refundDue > 0) {
+            const id = crypto.randomUUID();
+            statements.push(
+              db
+                .prepare(
+                  "INSERT INTO payments(id,invoice_id,kind,method,amount,date,reference,shift_id,actor) VALUES(?,?,'refund',?,?,?,?,?,?)",
+                )
+                .bind(
+                  id,
+                  invoiceId,
+                  d.refundMethod,
+                  refundDue,
+                  date,
+                  d.refundReference || number,
+                  d.shiftId,
+                  actor,
+                ),
+              financeSettlement(db, {
+                id,
+                documentId: invoiceId,
+                date,
+                amount: refundDue,
+                refund: true,
+                method: d.refundMethod,
+                reference: number,
+              }),
+            );
+          }
+          return { statements, result: true };
+        },
+      );
+      break;
+    } catch (error) {
+      // Another credit note took this number concurrently: take the next one.
+      if (attempt < 3 && String(error).includes("credit_notes.number")) {
+        seq = await nextSeq();
+        number = creditNoteNumber(settings.invoicePrefix, fy, seq);
+        continue;
       }
-      return { statements, result: true };
-    },
-  );
+      throw error;
+    }
+  }
   if (isFailure(result)) return result;
   return {
     invoice: (await loadInvoice(db, invoiceId))!,
@@ -1008,6 +1039,13 @@ async function shiftSummary(db: D1Database, id: string) {
       shift.expected_cash ??
       shift.opening_float + cashIn - cashOut + moved - expensePaid,
   };
+}
+
+/** Runs async jobs one at a time; D1 allows only six concurrent connections per invocation. */
+async function sequential<T>(jobs: (() => Promise<T>)[]) {
+  const out: T[] = [];
+  for (const job of jobs) out.push(await job());
+  return out;
 }
 
 /* ───────── Routes ───────── */
@@ -2370,7 +2408,8 @@ routes.put("/admin/erp/price-lists/:id", async (c) => {
             })
             .strict(),
         )
-        .max(5000),
+        // One atomic batch; stays well inside D1's per-request statement limits.
+        .max(900, "A price list can hold up to 900 special prices"),
     })
     .strict()
     .parse(await c.req.json());
@@ -2427,7 +2466,9 @@ routes.get("/admin/erp/shifts", async (c) => {
     "SELECT id FROM shifts ORDER BY opened_at DESC LIMIT 60",
   ).all<{ id: string }>();
   return c.json(
-    await Promise.all(rows.results.map((r) => shiftSummary(c.env.DB, r.id))),
+    await sequential(
+      rows.results.map((r) => () => shiftSummary(c.env.DB, r.id)),
+    ),
   );
 });
 
@@ -2521,11 +2562,13 @@ routes.get("/admin/erp/reports", async (c) => {
       ORDER BY p.stock*COALESCE(p.cost_paise,0) DESC LIMIT 50`,
     ),
     // Reserved numbers never used: explain or void them before filing.
-    db.prepare(
-      `WITH RECURSIVE n(fy,seq,last) AS (SELECT fy,first_seq,last_seq FROM number_blocks UNION ALL SELECT fy,seq+1,last FROM n WHERE seq<last)
+    db
+      .prepare(
+        `WITH RECURSIVE n(fy,seq,last) AS (SELECT fy,first_seq,last_seq FROM number_blocks WHERE fy=? UNION ALL SELECT fy,seq+1,last FROM n WHERE seq<last)
       SELECT n.fy,n.seq FROM n WHERE NOT EXISTS(SELECT 1 FROM invoices i WHERE i.fy=n.fy AND i.seq=n.seq)
       AND n.seq < (SELECT COALESCE(MAX(seq),0) FROM invoices i WHERE i.fy=n.fy) ORDER BY n.fy,n.seq LIMIT 200`,
-    ),
+      )
+      .bind(financialYear(indiaToday())),
     db.prepare(
       "SELECT number,date FROM invoices WHERE shortfall=1 ORDER BY date DESC LIMIT 100",
     ),

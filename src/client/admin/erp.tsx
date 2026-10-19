@@ -236,7 +236,12 @@ export function BillingPanel() {
           <strong>{money(totals.due)}</strong>
         </div>
       </div>
-      <div className="data-table-wrap">
+      <div
+        className="data-table-wrap"
+        tabIndex={0}
+        role="region"
+        aria-label="Scrollable table"
+      >
         <table className="data-table">
           <thead>
             <tr>
@@ -503,7 +508,12 @@ export function CustomersPanel() {
         </div>
       </div>
       {error && <p className="error banner">{error}</p>}
-      <div className="data-table-wrap">
+      <div
+        className="data-table-wrap"
+        tabIndex={0}
+        role="region"
+        aria-label="Scrollable table"
+      >
         <table className="data-table">
           <thead>
             <tr>
@@ -775,7 +785,12 @@ function CustomerLedger({
   const balance = entries.at(-1)?.balance ?? 0;
   return (
     <PanelDialog title={`${customer.name} · ledger`} onClose={onClose} wide>
-      <div className="data-table-wrap count-table">
+      <div
+        className="data-table-wrap count-table"
+        tabIndex={0}
+        role="region"
+        aria-label="Scrollable table"
+      >
         <table className="data-table compact">
           <thead>
             <tr>
@@ -1000,7 +1015,12 @@ export function PurchasesPanel({
           </table>
         </section>
       </div>
-      <div className="data-table-wrap">
+      <div
+        className="data-table-wrap"
+        tabIndex={0}
+        role="region"
+        aria-label="Scrollable table"
+      >
         <table className="data-table">
           <thead>
             <tr>
@@ -1718,7 +1738,12 @@ export function ExpensesPanel() {
           </strong>
         </div>
       </div>
-      <div className="data-table-wrap">
+      <div
+        className="data-table-wrap"
+        tabIndex={0}
+        role="region"
+        aria-label="Scrollable table"
+      >
         <table className="data-table">
           <thead>
             <tr>
@@ -2053,7 +2078,12 @@ export function RegisterPanel() {
   return (
     <div className="admin-stack">
       {error && <p className="error banner">{error}</p>}
-      <div className="data-table-wrap">
+      <div
+        className="data-table-wrap"
+        tabIndex={0}
+        role="region"
+        aria-label="Scrollable table"
+      >
         <table className="data-table">
           <thead>
             <tr>
@@ -2502,7 +2532,12 @@ function ReportTable({
           <Download size={14} /> CSV
         </button>
       </div>
-      <div className="report-scroll">
+      <div
+        className="report-scroll"
+        tabIndex={0}
+        role="region"
+        aria-label={title}
+      >
         <table className="data-table compact">
           <thead>
             <tr>

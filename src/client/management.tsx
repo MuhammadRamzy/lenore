@@ -862,7 +862,12 @@ export function Management() {
                   </button>
                 </div>
               </div>
-              <div className="data-table-wrap">
+              <div
+                className="data-table-wrap"
+                tabIndex={0}
+                role="region"
+                aria-label="Scrollable table"
+              >
                 <table className="data-table">
                   <thead>
                     <tr>

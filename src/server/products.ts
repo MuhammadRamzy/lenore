@@ -238,7 +238,8 @@ routes.post("/admin/products/import", async (c) => {
           }),
         )
         .min(1)
-        .max(500),
+        // Each row can need two statements; 400 rows keeps one atomic batch under 1,000.
+        .max(400, "Import up to 400 rows at a time"),
       dryRun: z.boolean(),
     })
     .strict()

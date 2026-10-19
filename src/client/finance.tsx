@@ -1236,7 +1236,12 @@ export function FinanceWorkspace() {
                     />
                   </label>
                 </div>
-                <div className="data-table-wrap">
+                <div
+                  className="data-table-wrap"
+                  tabIndex={0}
+                  role="region"
+                  aria-label="Scrollable table"
+                >
                   <table className="data-table finance-table">
                     <thead>
                       <tr>
@@ -1395,7 +1400,12 @@ export function FinanceWorkspace() {
             <>
               {section(
                 `Open balances · as of ${to}`,
-                <div className="data-table-wrap">
+                <div
+                  className="data-table-wrap"
+                  tabIndex={0}
+                  role="region"
+                  aria-label="Scrollable table"
+                >
                   <table className="data-table finance-table">
                     <thead>
                       <tr>
@@ -1460,7 +1470,12 @@ export function FinanceWorkspace() {
               )}
               {section(
                 "Settlements in period",
-                <div className="data-table-wrap">
+                <div
+                  className="data-table-wrap"
+                  tabIndex={0}
+                  role="region"
+                  aria-label="Scrollable table"
+                >
                   <table className="data-table finance-table">
                     <thead>
                       <tr>
@@ -1510,7 +1525,12 @@ export function FinanceWorkspace() {
                     input credit is shown separately; this table is not a
                     tax-payable calculation or a filed GSTR return.
                   </p>
-                  <div className="data-table-wrap">
+                  <div
+                    className="data-table-wrap"
+                    tabIndex={0}
+                    role="region"
+                    aria-label="Scrollable table"
+                  >
                     <table className="data-table">
                       <thead>
                         <tr>
@@ -1610,7 +1630,12 @@ export function FinanceWorkspace() {
                   registration. Realisation dates and rate evidence must be
                   verified.
                 </p>
-                <div className="data-table-wrap">
+                <div
+                  className="data-table-wrap"
+                  tabIndex={0}
+                  role="region"
+                  aria-label="Scrollable table"
+                >
                   <table className="data-table finance-table">
                     <thead>
                       <tr>

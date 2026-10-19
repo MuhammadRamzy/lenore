@@ -35,6 +35,8 @@
         { "pattern": "lenoretrading.com", "custom_domain": true },
       ],
       "placement": { "mode": "smart" },
+      // 03:15 UTC daily: remove expired sessions and rate-limit rows.
+      "triggers": { "crons": ["15 3 * * *"] },
       "observability": { "enabled": true, "head_sampling_rate": 1 },
       "vars": {
         "DEMO_MODE": "false",

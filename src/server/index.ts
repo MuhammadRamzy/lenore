@@ -71,6 +71,16 @@ app.use("/api/admin/*", async (c, next) => {
   await next();
 });
 
+/** Uptime probe: confirms the Worker can reach D1. */
+app.get("/api/health", async (c) => {
+  const started = Date.now();
+  try {
+    await c.env.DB.prepare("SELECT 1").first();
+    return c.json({ ok: true, db: "ok", ms: Date.now() - started });
+  } catch {
+    return c.json({ ok: false, db: "unavailable" }, 503);
+  }
+});
 app.get("/api/config", async (c) => {
   const s = await readSettings(c.env.DB);
   return c.json({
@@ -232,10 +242,37 @@ app.onError((error, c) => {
     path: c.req.path,
     error: String(error).replace(/\n/g, " ").slice(0, 300),
   });
+  // Website visitors get a readable page, not a JSON body.
+  if (!c.req.path.startsWith("/api/"))
+    return c.html(
+      `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lenore</title><body style="font-family:system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 1rem;line-height:1.6"><h1>Something went wrong</h1><p>Please refresh in a moment. You can also call Lenore on <a href="tel:+917511163131">+91 75111 63131</a>.</p></body></html>`,
+      500,
+    );
   return c.json(
     { error: "The request could not be completed. Please try again." },
     500,
   );
 });
-export { catalogueLevel };
-export default app;
+
+/** Daily housekeeping: expired sessions and rate-limit windows. */
+async function cleanup(env: Bindings) {
+  const now = Date.now();
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM sessions WHERE expires_at<=?").bind(now),
+    env.DB.prepare("DELETE FROM catalogue_sessions WHERE expires_at<=?").bind(
+      now,
+    ),
+    env.DB.prepare("DELETE FROM rate_limits WHERE expires_at<=?").bind(now),
+  ]);
+}
+export { catalogueLevel, cleanup };
+export default {
+  fetch: app.fetch,
+  scheduled: (
+    _event: ScheduledController,
+    env: Bindings,
+    ctx: ExecutionContext,
+  ) => {
+    ctx.waitUntil(cleanup(env));
+  },
+} satisfies ExportedHandler<Bindings>;

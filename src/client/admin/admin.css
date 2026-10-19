@@ -265,7 +265,8 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #8193a5;
+  /* 6.6:1 on the light sidebar (#e9edf2). */
+  color: #46586b;
 }
 .pos-launch {
   display: flex;

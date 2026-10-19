@@ -113,6 +113,7 @@ async function price(
   c: AppContext,
   data: z.infer<typeof quotationInput>,
   level: CatalogueLevel,
+  known?: Settings,
 ): Promise<Priced | string> {
   const viewer = c.get("viewer");
   const admin = isAdmin(viewer);
@@ -125,7 +126,7 @@ async function price(
     .bind(...ids)
     .all<ProductRow>();
   const byId = new Map(rows.results.map((p) => [p.id, p]));
-  const settings = await readSettings(c.env.DB);
+  const settings = known ?? (await readSettings(c.env.DB));
   const mode: PricingMode | "admin" = admin
     ? "admin"
     : level === "staff"
@@ -227,9 +228,9 @@ routes.post("/quotations", async (c) => {
     );
   if (data.validUntil < indiaToday())
     return c.json({ error: "The validity date cannot be in the past." }, 400);
-  const priced = await price(c, data, level);
-  if (typeof priced === "string") return c.json({ error: priced }, 409);
   const settings = await readSettings(c.env.DB);
+  const priced = await price(c, data, level, settings);
+  if (typeof priced === "string") return c.json({ error: priced }, 409);
   const year = indiaToday().slice(0, 4);
   const counter = await c.env.DB.prepare(
     `INSERT INTO counters(name,value) VALUES(?,1)

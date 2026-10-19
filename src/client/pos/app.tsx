@@ -296,6 +296,7 @@ function Counter({
   const [toast, setToast] = useState("");
   const [online, setOnline] = useState(() => navigator.onLine);
   const [queued, setQueued] = useState(() => readQueue().length);
+  const [reserved, setReserved] = useState(() => reservedCount());
   const [printMode, setPrintMode] = useState<"receipt" | "a4" | "z">("receipt");
   const search = useRef<HTMLInputElement>(null);
   const policy = boot.policy;
@@ -430,6 +431,7 @@ function Counter({
       timeZone: "Asia/Kolkata",
     });
     const number = await nextNumber(date);
+    setReserved(reservedCount());
     const payload: InvoiceInput = {
       id: crypto.randomUUID(),
       deviceId: deviceId(),
@@ -891,6 +893,10 @@ function Counter({
             const next: Line[] = [];
             for (const i of q.items) {
               const p = byId.get(i.productId);
+              const rate = Math.min(
+                i.mrpPaise ?? i.unitPricePaise ?? 0,
+                p?.pricePaise ?? Infinity,
+              );
               if (!p || p.gstRateBp === null) {
                 missing.push(i.code);
                 continue;
@@ -898,14 +904,15 @@ function Counter({
               next.push({
                 productId: p.id,
                 qty: i.quantity,
-                rate: Math.min(
-                  i.mrpPaise ?? i.unitPricePaise ?? 0,
-                  p.pricePaise ?? Infinity,
+                rate,
+                // The quoted net price, never more than the line itself if MRP has since changed.
+                discount: Math.max(
+                  0,
+                  Math.min(
+                    rate * i.quantity,
+                    rate * i.quantity - (i.unitPricePaise ?? rate) * i.quantity,
+                  ),
                 ),
-                discount:
-                  i.mrpPaise !== null && i.unitPricePaise !== null
-                    ? (i.mrpPaise - i.unitPricePaise) * i.quantity
-                    : 0,
                 manual: true,
               });
             }
@@ -1005,7 +1012,7 @@ function Counter({
         ) : null}
       </div>
       <p className="pos-foot fine-print">
-        {reservedCount()} invoice numbers reserved on this counter
+        {reserved} invoice numbers reserved on this counter
       </p>
     </div>
   );

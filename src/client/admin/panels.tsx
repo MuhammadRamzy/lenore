@@ -490,7 +490,12 @@ export function QuotationsPanel({ team }: { team?: TeamMember[] }) {
         </button>
       </div>
       {error && <p className="error banner">{error}</p>}
-      <div className="data-table-wrap">
+      <div
+        className="data-table-wrap"
+        tabIndex={0}
+        role="region"
+        aria-label="Scrollable table"
+      >
         <table className="data-table">
           <thead>
             <tr>
@@ -591,7 +596,12 @@ export function TeamPanel({ notify }: { notify: (m: string) => void }) {
         </button>
       </div>
       {error && <p className="error banner">{error}</p>}
-      <div className="data-table-wrap">
+      <div
+        className="data-table-wrap"
+        tabIndex={0}
+        role="region"
+        aria-label="Scrollable table"
+      >
         <table className="data-table">
           <thead>
             <tr>
@@ -1263,7 +1273,12 @@ export function StockCount({
               }}
             />
           </label>
-          <div className="data-table-wrap count-table">
+          <div
+            className="data-table-wrap count-table"
+            tabIndex={0}
+            role="region"
+            aria-label="Scrollable table"
+          >
             <table className="data-table compact">
               <thead>
                 <tr>
@@ -1477,7 +1492,8 @@ export function ImportProducts({
           <p className="muted">
             Upload a CSV (save Excel as CSV). The product code is the key:
             existing codes are updated, new codes are added. Stock only changes
-            through <em>openingStock</em> for new products. Up to 500 rows.
+            through <em>openingStock</em> for new products. Up to 400 rows per
+            file.
           </p>
           <button
             type="button"

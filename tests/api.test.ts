@@ -5,6 +5,7 @@ import type { D1Migration } from "@cloudflare/vitest-plugin";
 import type { Bindings } from "../src/server";
 import type { Product, CatalogueProduct } from "../src/shared";
 import { sha256 } from "../src/server/auth";
+import { cleanup } from "../src/server/index";
 import { quotationText } from "../src/client/quotation";
 import type { Quotation, TeamMember } from "../src/shared";
 import { inventoryCsv } from "../src/client/export";
@@ -2262,5 +2263,104 @@ describe("ERP and POS", () => {
       status: "closed",
       expectedCash: 200000 + 118000 - 50000 - 8000,
     });
+  });
+});
+
+describe("audit hardening", () => {
+  it("reports health with a database round trip", async () => {
+    const r = await SELF.fetch(`${base}/api/health`);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ ok: true, db: "ok" });
+  });
+  it("removes expired sessions and rate-limit rows on the scheduled cleanup", async () => {
+    await bindings.DB.batch([
+      bindings.DB.prepare(
+        "INSERT INTO sessions(token_hash,expires_at) VALUES('expired',1)",
+      ),
+      bindings.DB.prepare(
+        "INSERT INTO rate_limits(key,attempts,expires_at) VALUES('old',3,1)",
+      ),
+    ]);
+    await cleanup(bindings);
+    expect(
+      await bindings.DB.prepare(
+        "SELECT COUNT(*) AS n FROM sessions WHERE token_hash='expired'",
+      ).first("n"),
+    ).toBe(0);
+    expect(
+      await bindings.DB.prepare(
+        "SELECT COUNT(*) AS n FROM rate_limits WHERE key='old'",
+      ).first("n"),
+    ).toBe(0);
+    // The live test session survives.
+    expect((await request("/admin/products")).status).toBe(200);
+  });
+  it("numbers credit notes consecutively without gaps", async () => {
+    const p = await create({
+      code: "CN-SEQ",
+      published: true,
+      pricePaise: 10000,
+    } as Partial<typeof body>);
+    await bindings.DB.prepare("UPDATE products SET gst_rate_bp=1800 WHERE id=?")
+      .bind(p.id)
+      .run();
+    await adjust({ ...p, revision: 1 }, 10);
+    const b = (await (
+      await request("/pos/numbers", { deviceId: "seq-counter-1" }, "POST")
+    ).json()) as { fy: string; first: number };
+    const today = new Date().toLocaleDateString("en-CA", {
+      timeZone: "Asia/Kolkata",
+    });
+    const sale = {
+      id: crypto.randomUUID(),
+      deviceId: "seq-counter-1",
+      seq: b.first,
+      fy: b.fy,
+      date: today,
+      shiftId: null,
+      customerId: null,
+      walkIn: { name: "", phone: "" },
+      quotationId: null,
+      lines: [{ productId: p.id, qty: 3, rate: 10000, discount: 0 }],
+      payments: [
+        {
+          id: crypto.randomUUID(),
+          method: "cash",
+          amount: 30000,
+          reference: "",
+        },
+      ],
+      notes: "",
+      offline: false,
+    };
+    const { invoice } = (await (
+      await request("/pos/invoices", sale, "POST")
+    ).json()) as { invoice: { id: string } };
+    const note = () => ({
+      id: crypto.randomUUID(),
+      reason: "Return",
+      restock: true,
+      lines: [{ lineNo: 1, qty: 1 }],
+      refundMethod: "cash",
+      refundReference: "",
+      shiftId: null,
+    });
+    // A rejected return (too many units) must not consume a number.
+    expect(
+      (
+        await request(
+          `/pos/invoices/${invoice.id}/credit-notes`,
+          { ...note(), lines: [{ lineNo: 1, qty: 9 }] },
+          "POST",
+        )
+      ).status,
+    ).toBe(400);
+    const a = (await (
+      await request(`/pos/invoices/${invoice.id}/credit-notes`, note(), "POST")
+    ).json()) as { number: string };
+    const c = (await (
+      await request(`/pos/invoices/${invoice.id}/credit-notes`, note(), "POST")
+    ).json()) as { number: string };
+    expect(Number(c.number.slice(-4)) - Number(a.number.slice(-4))).toBe(1);
   });
 });
