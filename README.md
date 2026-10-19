@@ -29,6 +29,7 @@ The owner sign-in is generated on first run and stored in the ignored `local-acc
 - [Status](docs/STATUS.md) and [handoff](docs/HANDOFF.md)
 - [Deployment to Cloudflare](docs/DEPLOYMENT.md)
 - [Technical audit](docs/AUDIT.md)
+- [Page guide with screenshots (PDF)](docs/Lenore-pages.pdf)
 - [Decisions](docs/decisions/) and [design](DESIGN.md)
 
 Nothing is deployed. `npm run build` performs a Cloudflare dry run only. The existing Firebase billing app is untouched; its data migrates later once credentials are supplied through secrets.
