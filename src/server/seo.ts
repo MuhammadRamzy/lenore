@@ -12,6 +12,13 @@ import type { CategorySummary, SitePage } from "../client/site/types";
 import type { AppContext, AppEnv } from "./access";
 import { catalogueProduct, type ProductRow } from "./products";
 import { readSettings } from "./quotations";
+import {
+  ON_WEBSITE,
+  categoryLayout,
+  publicView,
+  readWebsite,
+  type WebsiteSettings,
+} from "./website";
 
 const FALLBACK_TEMPLATE = `<!doctype html><html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" /><title>Lenore</title></head><body><div id="root"></div></body></html>`;
 let cachedTemplate: string | null = null;
@@ -144,49 +151,73 @@ type SiteData = {
   mode: AccessMode;
   whatsapp: string;
   demo: boolean;
+  site: WebsiteSettings;
   products: CatalogueProduct[];
+  /** Products admins chose for the home page. */
+  featuredIds: Set<string>;
   categories: CategorySummary[];
 };
-/** Website data. Product details are exposed only when the catalogue is public. */
+/** Website data, limited to what admins choose to show under Website. */
 async function siteData(c: AppContext, withProducts = true): Promise<SiteData> {
-  const [mode, settings, rows] = await Promise.all([
-    accessMode(c.env.DB),
-    readSettings(c.env.DB),
+  const db = c.env.DB;
+  const [mode, settings, site, layout, rows] = await Promise.all([
+    accessMode(db),
+    readSettings(db),
+    readWebsite(db),
+    categoryLayout(db),
     // Pages without product content (about, contact) skip the product read.
     withProducts
-      ? c.env.DB.prepare(
-          "SELECT * FROM products WHERE published=1 ORDER BY category,name LIMIT 5000",
-        ).all<ProductRow>()
+      ? db
+          .prepare(
+            `SELECT * FROM products WHERE ${ON_WEBSITE} ORDER BY category,name LIMIT 5000`,
+          )
+          .all<ProductRow>()
       : Promise.resolve({ results: [] as ProductRow[] }),
   ]);
   const demo = c.env.DEMO_MODE === "true";
-  const all = rows.results.map((r) => catalogueProduct(r, "public"));
+  const all = rows.results.map((r) =>
+    publicView(catalogueProduct(r, "public"), site),
+  );
+  const featuredIds = new Set(
+    rows.results.filter((r) => r.featured).map((r) => r.id),
+  );
   const groups = new Map<string, CatalogueProduct[]>();
   for (const p of all)
     groups.set(p.category, [...(groups.get(p.category) ?? []), p]);
-  const categories = [...groups].map(([name, items]): CategorySummary => {
-    const pick =
-      items.find((p) => mode === "public" && p.imageUrl) ??
-      items.find((p) => demo && p.code.startsWith("DEMO-")) ??
-      null;
-    return {
-      name,
-      slug: categorySlug(name),
-      count: items.length,
-      cover: pick
-        ? {
-            code: pick.code,
-            imageUrl: mode === "public" ? pick.imageUrl : null,
-            posterUrl: null,
-          }
-        : null,
-    };
-  });
+  const order = (name: string) =>
+    layout.get(name.toLowerCase())?.sort_order ?? 1000;
+  const categories = [...groups]
+    .sort(([a], [b]) => order(a) - order(b) || a.localeCompare(b))
+    .map(([name, items]): CategorySummary => {
+      const pick =
+        items.find((p) => site.showProducts && p.imageUrl) ??
+        items.find((p) => demo && p.code.startsWith("DEMO-")) ??
+        null;
+      return {
+        name,
+        slug: categorySlug(name),
+        count: items.length,
+        intro: layout.get(name.toLowerCase())?.intro ?? "",
+        cover: pick
+          ? {
+              code: pick.code,
+              imageUrl: site.showProducts ? pick.imageUrl : null,
+              posterUrl: null,
+            }
+          : null,
+      };
+    });
+  const rank = new Map(categories.map((x, i) => [x.name, i]));
+  const products = site.showProducts
+    ? all.sort((a, b) => rank.get(a.category)! - rank.get(b.category)!)
+    : [];
   return {
     mode,
     whatsapp: settings.whatsapp,
     demo,
-    products: mode === "public" ? all : [],
+    site,
+    products,
+    featuredIds,
     categories,
   };
 }
@@ -251,12 +282,14 @@ function productLd(base: string, p: CatalogueProduct) {
             "@type": "Offer",
             priceCurrency: "INR",
             price: (p.pricePaise / 100).toFixed(2),
-            availability:
-              p.availability === "Available"
-                ? "https://schema.org/InStock"
-                : p.availability === "Low stock"
-                  ? "https://schema.org/LimitedAvailability"
-                  : "https://schema.org/OutOfStock",
+            ...(p.availability && {
+              availability:
+                p.availability === "Available"
+                  ? "https://schema.org/InStock"
+                  : p.availability === "Low stock"
+                    ? "https://schema.org/LimitedAvailability"
+                    : "https://schema.org/OutOfStock",
+            }),
             url: `${base}/products/${p.slug}`,
             seller: { "@id": `${base}/#business` },
           },
@@ -312,13 +345,17 @@ const common = (d: SiteData) => ({
   whatsapp: d.whatsapp,
   demo: d.demo,
   catalogueMode: d.mode,
+  showPrices: d.site.showProducts && d.site.showPrices,
+  showStock: d.site.showProducts && d.site.showStock,
 });
 
 routes.get("/", async (c) => {
   const d = await siteData(c);
-  const featured = [...d.products]
-    .sort((a, b) => +!!b.imageUrl - +!!a.imageUrl)
-    .slice(0, 8);
+  // Admin-picked products first; otherwise those with photos.
+  const picked = d.products.filter((p) => d.featuredIds.has(p.id));
+  const featured = picked.length
+    ? picked
+    : [...d.products].sort((a, b) => +!!b.imageUrl - +!!a.imageUrl).slice(0, 8);
   const base = origin(c);
   return renderSite(
     c,

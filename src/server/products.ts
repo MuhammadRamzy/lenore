@@ -11,6 +11,7 @@ import {
   type Product,
 } from "../shared";
 import { sha256 } from "./auth";
+import { ON_WEBSITE, publicView, readWebsite } from "./website";
 import {
   catalogueLevel,
   isAdmin,
@@ -41,6 +42,8 @@ export type ProductRow = {
   reorder_qty: number;
   bin: string;
   cost_paise: number | null;
+  on_website: number;
+  featured: number;
 };
 export const product = (r: ProductRow): Product => ({
   id: r.id,
@@ -116,30 +119,44 @@ const locked = (c: AppContext) =>
 routes.get("/catalogue", async (c) => {
   const level = await catalogueLevel(c);
   if (!level) return locked(c);
+  // Public visitors see what the website shows; the sales team sees every published product.
+  const site = level === "public" ? await readWebsite(c.env.DB) : null;
+  const where = site ? ON_WEBSITE : "published=1";
   // Cheap version check lets 40 phones refresh every 30 s with mostly 304s.
   const version = await c.env.DB.prepare(
-    "SELECT COUNT(*) AS n, COALESCE(MAX(updated_at),'') AS t FROM products WHERE published=1",
+    `SELECT COUNT(*) AS n, COALESCE(MAX(updated_at),'') AS t FROM products WHERE ${where}`,
   ).first<{ n: number; t: string }>();
-  const etag = `W/"${level}-${version!.n}-${version!.t}"`;
+  const etag = `W/"${level}-${version!.n}-${version!.t}${site ? `-${site.updatedAt}` : ""}"`;
   c.header("Cache-Control", "private, no-cache");
   c.header("ETag", etag);
   if (c.req.header("If-None-Match") === etag) return c.body(null, 304);
+  if (site && !site.showProducts) return c.json([]);
   const rows = await c.env.DB.prepare(
-    "SELECT * FROM products WHERE published=1 ORDER BY category,name LIMIT 5000",
+    `SELECT * FROM products WHERE ${where} ORDER BY category,name LIMIT 5000`,
   ).all<ProductRow>();
-  return c.json(rows.results.map((r) => catalogueProduct(r, level)));
+  return c.json(
+    rows.results.map((r) => {
+      const p = catalogueProduct(r, level);
+      return site ? publicView(p, site) : p;
+    }),
+  );
 });
 routes.get("/catalogue/:slug", async (c) => {
   const level = await catalogueLevel(c);
   if (!level) return locked(c);
-  const row = await c.env.DB.prepare(
-    "SELECT * FROM products WHERE published=1 AND slug=?",
-  )
-    .bind(c.req.param("slug"))
-    .first<ProductRow>();
+  const site = level === "public" ? await readWebsite(c.env.DB) : null;
+  const row =
+    site && !site.showProducts
+      ? null
+      : await c.env.DB.prepare(
+          `SELECT * FROM products WHERE ${site ? ON_WEBSITE : "published=1"} AND slug=?`,
+        )
+          .bind(c.req.param("slug"))
+          .first<ProductRow>();
   if (!row) return c.json({ error: "This product is not available." }, 404);
   c.executionCtx.waitUntil(recordView(c.env.DB, row.id));
-  return c.json(catalogueProduct(row, level));
+  const p = catalogueProduct(row, level);
+  return c.json(site ? publicView(p, site) : p);
 });
 routes.post("/catalogue/:id/view", async (c) => {
   if (!(await catalogueLevel(c))) return locked(c);
@@ -557,12 +574,18 @@ routes.post("/admin/media/by-code", async (c) => {
 routes.get("/media/:key", async (c) => {
   const key = c.req.param("key");
   const p = await c.env.DB.prepare(
-    "SELECT published FROM products WHERE image_key=? OR poster_key=?",
+    `SELECT published, (${ON_WEBSITE}) AND (SELECT show_products FROM website_settings WHERE id=1)=1 AS on_site
+    FROM products WHERE image_key=? OR poster_key=?`,
   )
     .bind(key, key)
-    .first<{ published: number }>();
+    .first<{ published: number; on_site: number }>();
+  const level = p?.published ? await catalogueLevel(c) : null;
+  // Website photos are public; anything else needs catalogue or workspace access.
   const allowed =
-    p && (p.published ? !!(await catalogueLevel(c)) : isAdmin(c.get("viewer")));
+    p &&
+    (p.on_site ||
+      (level && level !== "public") ||
+      (!p.published && isAdmin(c.get("viewer"))));
   if (!allowed) return c.json({ error: "Image not found." }, 404);
   const object = await c.env.MEDIA.get(key);
   if (!object) return c.json({ error: "Image not found." }, 404);

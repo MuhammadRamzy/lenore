@@ -115,12 +115,13 @@ export function useCatalogue(enabled: boolean) {
       write("lenore-catalogue-v2", data);
       write("lenore-catalogue-synced", now);
     } catch (e) {
+      // Offline is announced once by the app banner; only real failures show here.
       setError(
         navigator.onLine
           ? e instanceof Error
             ? e.message
             : "Refresh failed."
-          : "Offline. Showing the last saved catalogue.",
+          : "",
       );
     } finally {
       busy.current = false;

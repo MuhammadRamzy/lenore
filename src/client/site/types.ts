@@ -4,6 +4,8 @@ export type CategorySummary = {
   name: string;
   slug: string;
   count: number;
+  /** Optional admin-written introduction for the collection page. */
+  intro: string;
   /** Representative product, used for imagery. */
   cover: Pick<CatalogueProduct, "code" | "imageUrl" | "posterUrl"> | null;
 };
@@ -11,6 +13,9 @@ export type SiteCommon = {
   whatsapp: string;
   demo: boolean;
   catalogueMode: AccessMode;
+  /** Website switches set by admins (always false when products are hidden). */
+  showPrices: boolean;
+  showStock: boolean;
 };
 export type SitePage = SiteCommon &
   (

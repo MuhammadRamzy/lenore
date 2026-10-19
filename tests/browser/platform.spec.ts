@@ -211,7 +211,8 @@ test("admins add a salesperson, lock the catalogue to accounts and allow capped 
   await seller.getByLabel("Phone number").fill(SALES_PHONE);
   await seller.getByLabel("Password").fill(SALES_PASSWORD);
   await seller.getByRole("button", { name: "Open catalogue" }).click();
-  await expect(seller.getByText("24 pcs").first()).toBeVisible();
+  // Salespeople see exact quantities (the demo stock changes as tests bill it).
+  await expect(seller.getByText(/^In stock · \d+ pcs$/).first()).toBeVisible();
   await seller.getByRole("button", { name: "Add DEMO-AC04 to quote" }).click();
   await seller.goto("/catalogue/quote");
   await seller.getByLabel("Name", { exact: true }).fill("E2E Builder");
@@ -321,6 +322,7 @@ test("main surfaces pass automated accessibility checks on desktop and mobile", 
       await axe(page);
     }
   }
+  await page.setViewportSize({ width: 1440, height: 900 });
   await signIn(page);
   await axe(page);
   await page.getByRole("button", { name: "Insights", exact: true }).click();

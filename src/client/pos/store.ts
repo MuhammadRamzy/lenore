@@ -1,3 +1,4 @@
+import type { PaymentDetails } from "../../erp";
 import { api, ApiError } from "../api";
 import { financialYear, type InvoiceInput, type Invoice } from "../../erp";
 
@@ -43,6 +44,8 @@ export type Bootstrap = {
     stateCode: string;
     receiptFooter: string;
     blockSize: number;
+    /** Missing in bootstraps cached before payment details existed. */
+    payment?: PaymentDetails;
   };
   policy: { admin: boolean; mode: string; capBp: number };
   cashier: string;

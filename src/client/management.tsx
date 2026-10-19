@@ -42,6 +42,7 @@ import {
   SlidersVertical,
   Menu,
   Calculator,
+  Globe,
 } from "lucide-react";
 import {
   type Product,
@@ -65,6 +66,7 @@ import {
   StockCount,
   StockLedger,
   TeamPanel,
+  WebsitePanel,
 } from "./admin/panels";
 import "./admin/admin.css";
 import {
@@ -82,6 +84,7 @@ const navigation = [
   { id: "insights", label: "Insights", icon: BarChart3, group: "Sales" },
   { id: "quotations", label: "Quotations", icon: FileText, group: "Sales" },
   { id: "enquiries", label: "Enquiries", icon: ClipboardList, group: "Sales" },
+  { id: "website", label: "Website", icon: Globe, group: "Sales" },
   { id: "billing", label: "Invoices", icon: Receipt, group: "Billing" },
   { id: "customers", label: "Customers", icon: UserRound, group: "Billing" },
   { id: "register", label: "Cash register", icon: Wallet, group: "Billing" },
@@ -520,6 +523,8 @@ export function Management() {
                     catalogue:
                       "Decide what buyers see. Prepare, review and publish.",
                     enquiries: "Turn a shortlist into a conversation.",
+                    website:
+                      "Choose which collections, products, prices and stock the public website shows.",
                     finance:
                       "Revenue, costs, GST, export records and collections · INR reporting.",
                     activity:
@@ -575,6 +580,8 @@ export function Management() {
             <QuotationsPanel />
           ) : view === "team" ? (
             <TeamPanel notify={setNotice} />
+          ) : view === "website" ? (
+            <WebsitePanel notify={setNotice} />
           ) : view === "access" ? (
             <AccessPanel notify={setNotice} />
           ) : view === "billing" ? (

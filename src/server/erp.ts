@@ -23,6 +23,8 @@ import {
   type InvoiceLine,
   type Supply,
   type Supplier,
+  paymentDetailsInput,
+  type PaymentDetails,
 } from "../erp";
 import { discounted } from "../shared";
 import { sha256 } from "./auth";
@@ -37,6 +39,7 @@ type ErpSettings = {
   receiptFooter: string;
   blockSize: number;
   revision: number;
+  payment: PaymentDetails;
 };
 async function erpSettings(db: D1Database): Promise<ErpSettings> {
   const r = await db.prepare("SELECT * FROM erp_settings WHERE id=1").first<{
@@ -45,6 +48,15 @@ async function erpSettings(db: D1Database): Promise<ErpSettings> {
     receipt_footer: string;
     block_size: number;
     revision: number;
+    upi_id: string;
+    upi_name: string;
+    bank_account_name: string;
+    bank_name: string;
+    bank_account: string;
+    bank_ifsc: string;
+    bank_branch: string;
+    qr_on_bills: PaymentDetails["qrOnBills"];
+    bank_on_invoice: number;
   }>();
   return {
     invoicePrefix: r?.invoice_prefix ?? "LT",
@@ -52,6 +64,17 @@ async function erpSettings(db: D1Database): Promise<ErpSettings> {
     receiptFooter: r?.receipt_footer ?? "",
     blockSize: r?.block_size ?? 25,
     revision: r?.revision ?? 1,
+    payment: {
+      upiId: r?.upi_id ?? "",
+      upiName: r?.upi_name ?? "",
+      bankAccountName: r?.bank_account_name ?? "",
+      bankName: r?.bank_name ?? "",
+      bankAccount: r?.bank_account ?? "",
+      bankIfsc: r?.bank_ifsc ?? "",
+      bankBranch: r?.bank_branch ?? "",
+      qrOnBills: r?.qr_on_bills ?? "due",
+      bankOnInvoice: r ? !!r.bank_on_invoice : true,
+    },
   };
 }
 const fail = (message: string, status = 409) =>
@@ -2442,18 +2465,31 @@ routes.put("/admin/erp/settings", async (c) => {
       stateCode: z.string().regex(/^\d{2}$/),
       receiptFooter: z.string().trim().max(300),
       blockSize: z.number().int().min(5).max(200),
+      payment: paymentDetailsInput,
       revision: z.number().int().positive(),
     })
     .strict()
     .parse(await c.req.json());
+  const p = d.payment;
   const row = await c.env.DB.prepare(
-    "UPDATE erp_settings SET invoice_prefix=?,state_code=?,receipt_footer=?,block_size=?,revision=revision+1 WHERE id=1 AND revision=? RETURNING id",
+    `UPDATE erp_settings SET invoice_prefix=?,state_code=?,receipt_footer=?,block_size=?,
+    upi_id=?,upi_name=?,bank_account_name=?,bank_name=?,bank_account=?,bank_ifsc=?,bank_branch=?,
+    qr_on_bills=?,bank_on_invoice=?,revision=revision+1 WHERE id=1 AND revision=? RETURNING id`,
   )
     .bind(
       d.invoicePrefix,
       d.stateCode,
       d.receiptFooter,
       d.blockSize,
+      p.upiId,
+      p.upiName,
+      p.bankAccountName,
+      p.bankName,
+      p.bankAccount,
+      p.bankIfsc,
+      p.bankBranch,
+      p.qrOnBills,
+      +p.bankOnInvoice,
       d.revision,
     )
     .first();

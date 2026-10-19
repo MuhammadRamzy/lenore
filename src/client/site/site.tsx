@@ -237,6 +237,7 @@ export function ProductImage({
   );
 }
 export function StatusBadge({ product }: { product: CatalogueProduct }) {
+  if (!product.availability) return null;
   const tone =
     product.availability === "Available"
       ? "ok"
@@ -616,7 +617,7 @@ function Collections({
           Our collection is being updated. Please check back soon.
         </p>
       )}
-      {page.catalogueMode !== "public" && <CatalogueNote page={page} />}
+      {!page.showPrices && <CatalogueNote page={page} />}
     </section>
   );
 }
@@ -636,7 +637,8 @@ function Collection({
       />
       <h1>{page.category.name}</h1>
       <p className="lead">
-        {page.category.name} from Lenore, Kuttiady, Kozhikode.{" "}
+        {page.category.intro ||
+          `${page.category.name} from Lenore, Kuttiady, Kozhikode.`}{" "}
         {page.category.count}{" "}
         {page.category.count === 1 ? "product" : "products"} in this range.
       </p>
@@ -652,13 +654,14 @@ function Collection({
           </a>
         ))}
       </nav>
-      {page.products.length ? (
+      {page.products.length > 0 && (
         <div className="product-grid">
           {page.products.map((p) => (
             <ProductCard key={p.id} product={p} demo={page.demo} />
           ))}
         </div>
-      ) : (
+      )}
+      {(!page.products.length || !page.showPrices) && (
         <CatalogueNote page={page} />
       )}
     </section>

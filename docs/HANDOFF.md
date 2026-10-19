@@ -1,5 +1,11 @@
 # Handoff
 
+## Claude · 2026-10-19 · Website controls and UPI QR
+
+- Migration 0010: `products.on_website`/`featured`, `website_categories`, `website_settings` (initialised from the previous rule: products, prices and stock shown only if the catalogue was public). Website visibility is now independent of catalogue access; anonymous catalogue readers get the website's view. Admin view: Workspace → Website (`src/server/website.ts`, `WebsitePanel`).
+- Migration 0011: UPI ID and bank details in `erp_settings`, with `qr_on_bills` (off/due/always) and `bank_on_invoice`. UPI links follow the `upi://pay` format with a literal `@` in the payee address; QR rendered with `qrcode-generator` (SVG) and natively via ESC/POS `GS ( k` for direct printing. Owner must enter the real UPI ID and test with a ₹1 scan (preview shown in Billing settings).
+- Fixed a duplicate offline banner in the sales app; browser tests no longer depend on demo stock counts.
+
 ## Claude · 2026-10-19 · Stage B (ERP/POS) and audit complete
 
 - `/pos` billing counter, ERP workspace views (invoices, customers, purchases, expenses, register, reports, billing settings), separate PWAs for catalogue, admin and billing. Mobile workspace uses a bottom tab bar and full menu; verified no horizontal overflow at 390 px.

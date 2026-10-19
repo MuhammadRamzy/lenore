@@ -3,6 +3,7 @@ import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { consumeLimit } from "./auth";
 import finance from "./finance";
+import website from "./website";
 import access, {
   catalogueLevel,
   clientIp,
@@ -208,6 +209,7 @@ app.route("/api/admin/team", team);
 app.route("/api/admin", insights);
 app.route("/api", erp);
 app.route("/api/admin/finance", finance);
+app.route("/api", website);
 app.all("/api/*", (c) => c.json({ error: "Route not found." }, 404));
 app.route("/", seo);
 app.notFound((c) => notFound(c));

@@ -13,6 +13,7 @@ import { Overlay } from "../overlay";
 import { Sheet } from "../sales/ui";
 import { CollectForm, ReturnForm } from "../pos/app";
 import { TaxInvoice, ZReport } from "../pos/print";
+import { UpiQr } from "../pos/qr";
 import type { ShiftSummary } from "../pos/store";
 import {
   balanceOf,
@@ -23,6 +24,7 @@ import {
   type Customer,
   type Expense,
   type Invoice,
+  type PaymentDetails,
   type PaymentMethod,
   type Supplier,
 } from "../../erp";
@@ -346,6 +348,8 @@ function InvoiceSheet({
   onChange: (i: Invoice) => void;
 }) {
   const [mode, setMode] = useState<"view" | "return" | "collect">("view");
+  const payment = useLoad<{ payment: PaymentDetails }>("/admin/erp/settings")
+    .data?.payment;
   return (
     <Sheet title={`Invoice ${invoice.number}`} onClose={onClose} wide>
       {mode === "view" && (
@@ -375,7 +379,7 @@ function InvoiceSheet({
             )}
           </div>
           <div className="invoice-preview">
-            <TaxInvoice invoice={invoice} />
+            <TaxInvoice invoice={invoice} payment={payment} />
           </div>
           <h3>Payments</h3>
           <ul className="summary-lines">
@@ -412,7 +416,7 @@ function InvoiceSheet({
             </>
           )}
           <div className="print-area" aria-hidden="true">
-            <TaxInvoice invoice={invoice} />
+            <TaxInvoice invoice={invoice} payment={payment} />
           </div>
         </div>
       )}
@@ -431,6 +435,7 @@ function InvoiceSheet({
         <CollectForm
           invoice={invoice}
           shiftId={null}
+          payment={payment}
           onDone={(i) => {
             onChange(i);
             setMode("view");
@@ -2593,6 +2598,7 @@ export function BillingSettingsPanel({
     receiptFooter: string;
     blockSize: number;
     revision: number;
+    payment: PaymentDetails;
   }>("/admin/erp/settings");
   const lists = useLoad<PriceLists>("/admin/erp/price-lists");
   const [editing, setEditing] = useState<{
@@ -2619,6 +2625,20 @@ export function BillingSettingsPanel({
                     stateCode: f.get("state"),
                     receiptFooter: f.get("footer"),
                     blockSize: Number(f.get("block")),
+                    payment: {
+                      upiId: String(f.get("upiId")).trim(),
+                      upiName: f.get("upiName"),
+                      bankAccountName: f.get("bankAccountName"),
+                      bankName: f.get("bankName"),
+                      bankAccount: String(f.get("bankAccount")).replace(
+                        /\s/g,
+                        "",
+                      ),
+                      bankIfsc: String(f.get("bankIfsc")).toUpperCase(),
+                      bankBranch: f.get("bankBranch"),
+                      qrOnBills: f.get("qrOnBills"),
+                      bankOnInvoice: f.get("bankOnInvoice") === "on",
+                    },
                     revision: s.revision,
                   },
                   "PUT",
@@ -2675,6 +2695,115 @@ export function BillingSettingsPanel({
                 defaultValue={s.receiptFooter}
               />
             </label>
+            <h3>UPI and bank details</h3>
+            <p className="muted">
+              The counter shows a UPI QR code for the exact bill amount, which
+              customers scan with any UPI app. Bank details print on A4 tax
+              invoices for transfers.
+            </p>
+            <div className="form-row">
+              <label>
+                UPI ID
+                <input
+                  name="upiId"
+                  defaultValue={s.payment.upiId}
+                  placeholder="lenore@okhdfcbank"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  maxLength={320}
+                />
+              </label>
+              <label>
+                Name shown in UPI apps
+                <input
+                  name="upiName"
+                  defaultValue={s.payment.upiName}
+                  placeholder="Lenore Trading LLP"
+                  maxLength={60}
+                />
+              </label>
+            </div>
+            <label>
+              Print the UPI QR on bills
+              <select name="qrOnBills" defaultValue={s.payment.qrOnBills}>
+                <option value="due">
+                  Only when an amount is due (for that amount)
+                </option>
+                <option value="always">
+                  Always (amount due, or open amount when paid)
+                </option>
+                <option value="off">Never</option>
+              </select>
+            </label>
+            <div className="form-row">
+              <label>
+                Account name
+                <input
+                  name="bankAccountName"
+                  defaultValue={s.payment.bankAccountName}
+                  placeholder="Lenore Trading LLP"
+                  maxLength={80}
+                />
+              </label>
+              <label>
+                Bank
+                <input
+                  name="bankName"
+                  defaultValue={s.payment.bankName}
+                  maxLength={80}
+                />
+              </label>
+            </div>
+            <div className="form-row">
+              <label>
+                Account number
+                <input
+                  name="bankAccount"
+                  inputMode="numeric"
+                  defaultValue={s.payment.bankAccount}
+                  maxLength={24}
+                />
+              </label>
+              <label>
+                IFSC
+                <input
+                  name="bankIfsc"
+                  defaultValue={s.payment.bankIfsc}
+                  autoCapitalize="characters"
+                  maxLength={11}
+                />
+              </label>
+            </div>
+            <label>
+              Branch
+              <input
+                name="bankBranch"
+                defaultValue={s.payment.bankBranch}
+                maxLength={80}
+              />
+            </label>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                name="bankOnInvoice"
+                defaultChecked={s.payment.bankOnInvoice}
+              />
+              <span>Print bank details on A4 tax invoices</span>
+            </label>
+            {s.payment.upiId && (
+              <div className="pay-preview">
+                <UpiQr
+                  payment={s.payment}
+                  amount={100}
+                  note="Test"
+                  size={120}
+                />
+                <small className="muted">
+                  Test code for ₹1.00. Scan it with a phone to check the details
+                  before using it at the counter.
+                </small>
+              </div>
+            )}
             {error && <p className="error">{error}</p>}
             <div className="form-actions">
               <button className="button dark">Save</button>

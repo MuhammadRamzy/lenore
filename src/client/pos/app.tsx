@@ -30,6 +30,7 @@ import {
   type Invoice,
   type InvoiceInput,
   type PaymentMethod,
+  type PaymentDetails,
 } from "../../erp";
 import { money, type SessionInfo } from "../../shared";
 import "./pos.css";
@@ -37,6 +38,7 @@ import { Mark } from "../site/site";
 import { whatsappLink, withCountry } from "../links";
 import { Sheet } from "../sales/ui";
 import { Receipt, TaxInvoice, ZReport } from "./print";
+import { UpiQr } from "./qr";
 import {
   connectPrinter,
   printEscPos,
@@ -858,6 +860,7 @@ function Counter({
         <PaySheet
           total={bill.total}
           customer={customer}
+          payment={boot.settings.payment}
           onClose={() => setSheet(null)}
           onComplete={async (payments) => {
             await complete(payments);
@@ -981,6 +984,7 @@ function Counter({
         <DoneSheet
           done={done}
           footer={boot.settings.receiptFooter}
+          payment={boot.settings.payment}
           onClose={() => {
             setDone(null);
             search.current?.focus();
@@ -1001,12 +1005,16 @@ function Counter({
           <ZReport shift={shift} />
         ) : done ? (
           printMode === "a4" ? (
-            <TaxInvoice invoice={done.invoice} />
+            <TaxInvoice
+              invoice={done.invoice}
+              payment={boot.settings.payment}
+            />
           ) : (
             <Receipt
               invoice={done.invoice}
               footer={boot.settings.receiptFooter}
               pending={done.pending}
+              payment={boot.settings.payment}
             />
           )
         ) : null}
@@ -1021,11 +1029,13 @@ function Counter({
 function PaySheet({
   total,
   customer,
+  payment,
   onClose,
   onComplete,
 }: {
   total: number;
   customer: Customer | null;
+  payment?: PaymentDetails;
   onClose: () => void;
   onComplete: (p: Payment[]) => Promise<void>;
 }) {
@@ -1113,6 +1123,22 @@ function PaySheet({
               ))}
           </div>
         )}
+        {method === "upi" &&
+          (payment?.upiId ? (
+            tendered > 0 && (
+              <UpiQr
+                payment={payment}
+                amount={Math.min(tendered, remaining)}
+                note="Lenore bill"
+                size={200}
+              />
+            )
+          ) : (
+            <p className="muted">
+              Add the shop&apos;s UPI ID under Workspace → Billing settings to
+              show a scan-to-pay QR code here.
+            </p>
+          ))}
         {method !== "cash" && (
           <label>
             Reference (UTR / card slip)
@@ -1743,6 +1769,7 @@ function BillsSheet({
 function DoneSheet({
   done,
   footer,
+  payment,
   onClose,
   onPrint,
   onChange,
@@ -1751,6 +1778,7 @@ function DoneSheet({
 }: {
   done: { invoice: Invoice; pending: boolean };
   footer: string;
+  payment?: PaymentDetails;
   onClose: () => void;
   onPrint: (m: "receipt" | "a4") => void;
   onChange: (i: Invoice) => void;
@@ -1765,6 +1793,7 @@ function DoneSheet({
     `${i.customer.name} · ${i.date}`,
     ...i.lines.map((l) => `${l.name} × ${l.qty} = ${money(l.total)}`),
     `*Total ${money(i.total)}*${due > 0 ? ` · Balance ${money(due)}` : ""}`,
+    ...(due > 0 && payment?.upiId ? [`Pay by UPI: ${payment.upiId}`] : []),
     "Thank you for shopping at Lenore, Kuttiady.",
   ].join("\n");
   return (
@@ -1782,6 +1811,14 @@ function DoneSheet({
               {due > 0 && ` · Balance due ${money(due)}`}
               {i.credited > 0 && ` · Credited ${money(i.credited)}`}
             </p>
+            {due > 0 && payment?.upiId && (
+              <UpiQr
+                payment={payment}
+                amount={due}
+                note={i.number}
+                size={200}
+              />
+            )}
             {i.shortfall && (
               <p className="banner warn">
                 Some items exceeded recorded stock. An admin should review
@@ -1805,6 +1842,7 @@ function DoneSheet({
                         i,
                         footer,
                         i.payments.some((p) => p.method === "cash"),
+                        payment,
                       );
                     } catch (e) {
                       notify(errorMessage(e));
@@ -1868,6 +1906,7 @@ function DoneSheet({
         <CollectForm
           invoice={i}
           shiftId={shiftId}
+          payment={payment}
           onDone={(inv) => {
             onChange(inv);
             setMode("main");
@@ -1997,11 +2036,13 @@ export function ReturnForm({
 export function CollectForm({
   invoice,
   shiftId,
+  payment,
   onDone,
   onCancel,
 }: {
   invoice: Invoice;
   shiftId: string | null;
+  payment?: PaymentDetails;
   onDone: (i: Invoice) => void;
   onCancel: () => void;
 }) {
@@ -2030,6 +2071,13 @@ export function CollectForm({
           onChange={(e) => setAmount(e.target.value)}
         />
       </label>
+      {method === "upi" && rupeesToPaise(amount || "0") > 0 && (
+        <UpiQr
+          payment={payment}
+          amount={rupeesToPaise(amount)}
+          note={invoice.number}
+        />
+      )}
       {error && <p className="error">{error}</p>}
       <div className="sheet-actions">
         <button className="btn btn-ghost" onClick={onCancel}>

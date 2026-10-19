@@ -389,7 +389,52 @@
   .a4-invoice .sign {
     text-align: right;
   }
+  .receipt .upi-qr {
+    flex-direction: column;
+    text-align: center;
+  }
+  .a4-invoice .pay-details {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    margin-top: 12px;
+    padding: 8px 0;
+    border-top: 1px solid #000;
+    font-size: 9pt;
+  }
   @page {
     margin: 8mm;
   }
+}
+/* UPI QR: shared by the counter screen, receipts and invoices. */
+.upi-qr {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.upi-qr .qr {
+  flex: none;
+  max-width: 100%;
+  height: auto;
+}
+.upi-qr-text {
+  display: grid;
+  gap: 2px;
+  overflow-wrap: anywhere;
+}
+.pay-details {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-top: 12px;
+}
+.upi-qr.large {
+  flex-direction: column;
+  text-align: center;
+  padding: 8px 0;
+}
+.upi-qr.large .upi-qr-text strong {
+  font-size: 1.25rem;
 }

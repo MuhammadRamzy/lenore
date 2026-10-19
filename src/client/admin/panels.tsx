@@ -917,7 +917,7 @@ export function AccessPanel({ notify }: { notify: (m: string) => void }) {
                 [
                   "public",
                   "Public",
-                  "Anyone can browse. Visitors see MRP and stock status, never exact quantities.",
+                  "Anyone can browse the catalogue app and sees what the Website settings allow. Exact quantities are never shown.",
                 ],
                 [
                   "password",
@@ -989,6 +989,10 @@ export function AccessPanel({ notify }: { notify: (m: string) => void }) {
             <button className="button dark">Save access</button>
           </div>
         </form>
+        <p className="muted">
+          The public website is controlled separately under Website: which
+          collections and products appear, and whether prices and stock show.
+        </p>
       </section>
       <section className="work-section settings-section">
         <h2>Quotation pricing</h2>
@@ -1787,5 +1791,503 @@ function Barcode({ value }: { value: string }) {
         <rect key={i} x={b.x} y={0} width={b.w} height={40} />
       ))}
     </svg>
+  );
+}
+
+type WebsiteData = {
+  settings: {
+    showProducts: boolean;
+    showPrices: boolean;
+    showStock: boolean;
+    revision: number;
+  };
+  categories: {
+    name: string;
+    hidden: boolean;
+    sortOrder: number;
+    intro: string;
+    products: number;
+    onWebsite: number;
+  }[];
+  products: {
+    id: string;
+    code: string;
+    name: string;
+    category: string;
+    published: boolean;
+    onWebsite: boolean;
+    featured: boolean;
+    hasPhoto: boolean;
+  }[];
+};
+/** Admin control over the public website, separate from the sales catalogue. */
+export function WebsitePanel({ notify }: { notify: (m: string) => void }) {
+  const [data, setData] = useState<WebsiteData | null>(null);
+  const [site, setSite] = useState<WebsiteData["settings"] | null>(null);
+  const [categories, setCategories] = useState<WebsiteData["categories"]>([]);
+  const [filter, setFilter] = useState("");
+  const [category, setCategory] = useState("");
+  const [q, setQ] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const load = () =>
+    api<WebsiteData>("/admin/website")
+      .then((d) => {
+        setData(d);
+        setSite(d.settings);
+        setCategories(d.categories);
+        setError("");
+      })
+      .catch((e) => setError(errorMessage(e)));
+  useEffect(() => {
+    void load();
+  }, []);
+  const hiddenCategories = useMemo(
+    () => new Set(categories.filter((c) => c.hidden).map((c) => c.name)),
+    [categories],
+  );
+  const rows = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return (data?.products ?? []).filter(
+      (p) =>
+        (!category || p.category === category) &&
+        (!needle ||
+          p.name.toLowerCase().includes(needle) ||
+          p.code.toLowerCase().includes(needle)) &&
+        (filter === "shown"
+          ? p.published && p.onWebsite && !hiddenCategories.has(p.category)
+          : filter === "hidden"
+            ? !p.onWebsite
+            : filter === "featured"
+              ? p.featured
+              : true),
+    );
+  }, [data, q, category, filter, hiddenCategories]);
+  if (!data || !site)
+    return <p className="muted">{error || "Loading website settings…"}</p>;
+  const featuredCount = data.products.filter((p) => p.featured).length;
+  const setProducts = async (
+    ids: string[],
+    change: { onWebsite?: boolean; featured?: boolean },
+    message: string,
+  ) => {
+    setBusy(true);
+    setError("");
+    try {
+      await api("/admin/website/products", { ids, ...change }, "PUT");
+      setData({
+        ...data,
+        products: data.products.map((p) =>
+          ids.includes(p.id) ? { ...p, ...change } : p,
+        ),
+      });
+      setSelected(new Set());
+      notify(message);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const ids = [...selected];
+  const allShown = rows.length > 0 && rows.every((p) => selected.has(p.id));
+  return (
+    <div className="admin-stack">
+      <div className="settings-grid">
+        <section className="work-section settings-section">
+          <h2>What visitors see</h2>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setError("");
+              try {
+                const next = await api<WebsiteData["settings"]>(
+                  "/admin/website/settings",
+                  {
+                    showProducts: site.showProducts,
+                    showPrices: site.showPrices,
+                    showStock: site.showStock,
+                    revision: site.revision,
+                  },
+                  "PUT",
+                );
+                setSite(next);
+                setData({ ...data, settings: next });
+                notify("Website settings saved.");
+              } catch (err) {
+                setError(errorMessage(err));
+              }
+            }}
+          >
+            <fieldset className="choice-list">
+              <legend className="visually-hidden">Website display</legend>
+              {(
+                [
+                  [
+                    "showProducts",
+                    "Show products",
+                    "List individual products on collection pages. When off, visitors see collections only and are invited to ask on WhatsApp.",
+                  ],
+                  [
+                    "showPrices",
+                    "Show prices (MRP)",
+                    "When off, products show “Price on request”.",
+                  ],
+                  [
+                    "showStock",
+                    "Show stock status",
+                    "In stock, limited or out of stock. Exact quantities are never shown publicly.",
+                  ],
+                ] as const
+              ).map(([key, label, help]) => (
+                <label key={key} className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={site[key]}
+                    disabled={key !== "showProducts" && !site.showProducts}
+                    onChange={(e) =>
+                      setSite({ ...site, [key]: e.target.checked })
+                    }
+                  />
+                  <span>
+                    <strong>{label}</strong>
+                    <small>{help}</small>
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+            <p className="muted">
+              The sales team always sees every published product in the
+              catalogue app. If the catalogue is public, anonymous visitors
+              there see exactly what the website shows. Changes appear on the
+              website within a minute.
+            </p>
+            <div className="form-actions">
+              <a className="button" href="/collections" target="_blank">
+                View website
+              </a>
+              <button className="button dark">Save</button>
+            </div>
+          </form>
+        </section>
+        <section className="work-section settings-section">
+          <h2>Collections</h2>
+          <p className="muted">
+            Hide a whole collection, set the order collections appear in (lower
+            first) and add a short introduction for its page.
+          </p>
+          <div
+            className="data-table-wrap"
+            tabIndex={0}
+            role="region"
+            aria-label="Collections"
+          >
+            <table className="data-table compact website-collections">
+              <thead>
+                <tr>
+                  <th scope="col">Collection</th>
+                  <th scope="col">Show</th>
+                  <th scope="col">Order</th>
+                  <th scope="col">Introduction</th>
+                </tr>
+              </thead>
+              <tbody>
+                {categories.map((c, i) => {
+                  const update = (patch: Partial<typeof c>) =>
+                    setCategories(
+                      categories.map((x, j) =>
+                        j === i ? { ...x, ...patch } : x,
+                      ),
+                    );
+                  return (
+                    <tr key={c.name}>
+                      <td>
+                        <strong>{c.name}</strong>
+                        <small className="muted block">
+                          {c.onWebsite} of {c.products} on website
+                        </small>
+                      </td>
+                      <td>
+                        <input
+                          type="checkbox"
+                          aria-label={`Show ${c.name} on the website`}
+                          checked={!c.hidden}
+                          onChange={(e) =>
+                            update({ hidden: !e.target.checked })
+                          }
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="number"
+                          min={0}
+                          max={1000}
+                          className="narrow"
+                          aria-label={`Order of ${c.name}`}
+                          value={c.sortOrder === 1000 ? "" : c.sortOrder}
+                          placeholder="—"
+                          onChange={(e) =>
+                            update({
+                              sortOrder:
+                                e.target.value === ""
+                                  ? 1000
+                                  : Math.min(
+                                      1000,
+                                      Math.max(0, Number(e.target.value)),
+                                    ),
+                            })
+                          }
+                        />
+                      </td>
+                      <td>
+                        <input
+                          maxLength={400}
+                          aria-label={`Introduction for ${c.name}`}
+                          placeholder="Optional"
+                          value={c.intro}
+                          onChange={(e) => update({ intro: e.target.value })}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+                {!categories.length && (
+                  <tr>
+                    <td colSpan={4} className="muted">
+                      Add products to create collections.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="form-actions">
+            <button
+              className="button dark"
+              disabled={busy || !categories.length}
+              onClick={async () => {
+                setBusy(true);
+                setError("");
+                try {
+                  await api(
+                    "/admin/website/categories",
+                    {
+                      categories: categories.map((c) => ({
+                        name: c.name,
+                        hidden: c.hidden,
+                        sortOrder: c.sortOrder,
+                        intro: c.intro,
+                      })),
+                    },
+                    "PUT",
+                  );
+                  notify("Collections saved.");
+                } catch (e) {
+                  setError(errorMessage(e));
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              Save collections
+            </button>
+          </div>
+        </section>
+      </div>
+      {error && <p className="error banner">{error}</p>}
+      <section className="work-section">
+        <div className="work-section-title">
+          <h2>Products on the website</h2>
+        </div>
+        <p className="muted section-note">
+          Hide individual products from the website, and choose up to 12
+          featured products for the home page ({featuredCount} chosen
+          {featuredCount === 0 && "; products with photos are shown instead"}).
+          Drafts never appear; publish them under Catalogue first.
+        </p>
+        <div className="table-tools">
+          <div className="filter-tabs" role="group" aria-label="Show">
+            {[
+              ["", "All"],
+              ["shown", "On website"],
+              ["hidden", "Hidden"],
+              ["featured", "Featured"],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                className={filter === value ? "selected" : ""}
+                aria-pressed={filter === value}
+                onClick={() => setFilter(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <label className="search">
+            <input
+              placeholder="Name or code"
+              aria-label="Search products"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+          </label>
+        </div>
+        <div className="table-secondary-tools">
+          <label>
+            Collection
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+            >
+              <option value="">All collections</option>
+              {categories.map((c) => (
+                <option key={c.name}>{c.name}</option>
+              ))}
+            </select>
+          </label>
+          {ids.length > 0 && (
+            <>
+              <span className="muted">{ids.length} selected</span>
+              <button
+                className="button"
+                disabled={busy}
+                onClick={() =>
+                  void setProducts(
+                    ids,
+                    { onWebsite: true },
+                    `${ids.length} shown on the website.`,
+                  )
+                }
+              >
+                Show on website
+              </button>
+              <button
+                className="button"
+                disabled={busy}
+                onClick={() =>
+                  void setProducts(
+                    ids,
+                    { onWebsite: false, featured: false },
+                    `${ids.length} hidden from the website.`,
+                  )
+                }
+              >
+                Hide from website
+              </button>
+            </>
+          )}
+        </div>
+        <div
+          className="data-table-wrap"
+          tabIndex={0}
+          role="region"
+          aria-label="Products on the website"
+        >
+          <table className="data-table website-products">
+            <thead>
+              <tr>
+                <th scope="col">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all listed products"
+                    checked={allShown}
+                    onChange={(e) =>
+                      setSelected(
+                        e.target.checked
+                          ? new Set(rows.map((p) => p.id))
+                          : new Set(),
+                      )
+                    }
+                  />
+                </th>
+                <th scope="col">Product</th>
+                <th scope="col">On website</th>
+                <th scope="col">Home page</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((p) => {
+                const reason = !p.published
+                  ? "Draft"
+                  : hiddenCategories.has(p.category)
+                    ? "Collection hidden"
+                    : "";
+                return (
+                  <tr key={p.id}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${p.code}`}
+                        checked={selected.has(p.id)}
+                        onChange={(e) => {
+                          const next = new Set(selected);
+                          if (e.target.checked) next.add(p.id);
+                          else next.delete(p.id);
+                          setSelected(next);
+                        }}
+                      />
+                    </td>
+                    <td>
+                      <strong>{p.name}</strong>
+                      <small className="muted block">
+                        {p.code} · {p.category}
+                        {!p.hasPhoto && " · no photo"}
+                      </small>
+                    </td>
+                    <td>
+                      <label className="inline-check">
+                        <input
+                          type="checkbox"
+                          checked={p.onWebsite}
+                          disabled={busy}
+                          onChange={(e) =>
+                            void setProducts(
+                              [p.id],
+                              e.target.checked
+                                ? { onWebsite: true }
+                                : { onWebsite: false, featured: false },
+                              `${p.code} ${e.target.checked ? "shown on" : "hidden from"} the website.`,
+                            )
+                          }
+                        />
+                        <span>{p.onWebsite ? "Shown" : "Hidden"}</span>
+                      </label>
+                      {reason && p.onWebsite && (
+                        <small className="muted block">{reason}</small>
+                      )}
+                    </td>
+                    <td>
+                      <label className="inline-check">
+                        <input
+                          type="checkbox"
+                          checked={p.featured}
+                          disabled={busy || !p.onWebsite}
+                          onChange={(e) =>
+                            void setProducts(
+                              [p.id],
+                              { featured: e.target.checked },
+                              `${p.code} ${e.target.checked ? "featured on" : "removed from"} the home page.`,
+                            )
+                          }
+                        />
+                        <span>Featured</span>
+                      </label>
+                    </td>
+                  </tr>
+                );
+              })}
+              {!rows.length && (
+                <tr>
+                  <td colSpan={4} className="muted">
+                    No products match.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
   );
 }

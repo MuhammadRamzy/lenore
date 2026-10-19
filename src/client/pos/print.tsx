@@ -1,6 +1,12 @@
 import { business, addressLine } from "../../business";
-import { gstStates, methodLabel, type Invoice } from "../../erp";
+import {
+  gstStates,
+  methodLabel,
+  type Invoice,
+  type PaymentDetails,
+} from "../../erp";
 import { money } from "../../shared";
+import { billQr, UpiQr } from "./qr";
 import type { ShiftSummary } from "./store";
 
 const when = (iso: string) =>
@@ -75,11 +81,14 @@ export function Receipt({
   invoice,
   footer,
   pending,
+  payment,
 }: {
   invoice: Invoice;
   footer: string;
   pending?: boolean;
+  payment?: PaymentDetails;
 }) {
+  const qr = billQr(invoice, payment);
   const due =
     invoice.total - invoice.credited - invoice.paid + invoice.refunded;
   return (
@@ -164,6 +173,17 @@ export function Receipt({
           <span>{money(due)}</span>
         </div>
       )}
+      {qr && (
+        <>
+          <div className="rule" />
+          <UpiQr
+            payment={payment}
+            amount={qr.amount}
+            note={invoice.number}
+            size={150}
+          />
+        </>
+      )}
       <div className="rule" />
       <div className="center">
         <div>{footer}</div>
@@ -175,8 +195,16 @@ export function Receipt({
 }
 
 /** A4 GST tax invoice. */
-export function TaxInvoice({ invoice }: { invoice: Invoice }) {
+export function TaxInvoice({
+  invoice,
+  payment,
+}: {
+  invoice: Invoice;
+  payment?: PaymentDetails;
+}) {
   const igst = invoice.igst > 0;
+  const qr = billQr(invoice, payment);
+  const bank = payment?.bankOnInvoice && payment.bankAccount ? payment : null;
   return (
     <div className="a4-invoice">
       <header>
@@ -289,6 +317,33 @@ export function TaxInvoice({ invoice }: { invoice: Invoice }) {
         </div>
       </div>
       <p className="words">{amountInWords(invoice.total)}</p>
+      {(bank || qr) && (
+        <section className="pay-details">
+          {bank && (
+            <div>
+              <strong>Bank details for payment</strong>
+              <div>
+                Account name: {bank.bankAccountName || business.legalName}
+              </div>
+              <div>
+                Bank: {bank.bankName}
+                {bank.bankBranch && `, ${bank.bankBranch}`}
+              </div>
+              <div>A/c no: {bank.bankAccount}</div>
+              <div>IFSC: {bank.bankIfsc}</div>
+              {payment?.upiId && <div>UPI: {payment.upiId}</div>}
+            </div>
+          )}
+          {qr && (
+            <UpiQr
+              payment={payment}
+              amount={qr.amount}
+              note={invoice.number}
+              size={120}
+            />
+          )}
+        </section>
+      )}
       <footer>
         <p>
           Prices are inclusive of GST. Goods once sold are exchanged only with

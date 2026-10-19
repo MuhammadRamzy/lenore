@@ -153,7 +153,8 @@ export type CatalogueProduct = Pick<
 > & {
   /** Exact quantity for authorised users; null for public visitors. */
   stock: number | null;
-  availability: "Available" | "Low stock" | "Currently unavailable";
+  /** Null when the website hides stock from public visitors. */
+  availability: "Available" | "Low stock" | "Currently unavailable" | null;
 };
 
 export type AccessMode = "public" | "password" | "accounts";
@@ -346,7 +347,7 @@ export const money = (paise: number | null) =>
 export const availability = (
   stock: number,
   low: number,
-): CatalogueProduct["availability"] =>
+): NonNullable<CatalogueProduct["availability"]> =>
   stock === 0
     ? "Currently unavailable"
     : stock <= low

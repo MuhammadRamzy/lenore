@@ -83,6 +83,65 @@ export const methodLabel: Record<PaymentMethod | "credit", string> = {
   credit: "On credit",
 };
 const paise = z.number().int().min(0).max(10_000_000_000);
+
+/** Shop payment details printed on bills and used for UPI QR codes. */
+export const paymentDetailsInput = z
+  .object({
+    upiId: z
+      .string()
+      .trim()
+      .regex(
+        /^$|^[a-zA-Z0-9._-]{2,256}@[a-zA-Z][a-zA-Z0-9]{1,63}$/,
+        "Enter a UPI ID like lenore@okhdfcbank",
+      ),
+    upiName: z.string().trim().max(60),
+    bankAccountName: z.string().trim().max(80),
+    bankName: z.string().trim().max(80),
+    bankAccount: z
+      .string()
+      .trim()
+      .regex(/^$|^\d{6,18}$/, "Account number should be 6 to 18 digits"),
+    bankIfsc: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .regex(/^$|^[A-Z]{4}0[A-Z0-9]{6}$/, "IFSC should look like HDFC0001234"),
+    bankBranch: z.string().trim().max(80),
+    qrOnBills: z.enum(["off", "due", "always"]),
+    bankOnInvoice: z.boolean(),
+  })
+  .strict();
+export type PaymentDetails = z.infer<typeof paymentDetailsInput>;
+
+/**
+ * UPI deep link (NPCI "upi://pay") that any UPI app can scan. With an amount
+ * the payer's app opens with it filled in; the bill number goes in the note.
+ */
+export function upiLink(
+  d: Pick<PaymentDetails, "upiId" | "upiName">,
+  amountPaise: number | null,
+  note = "",
+) {
+  if (!d.upiId) return null;
+  const params = [
+    // Keep "@" literal: some UPI apps reject an encoded payee address.
+    `pa=${encodeURIComponent(d.upiId).replace("%40", "@")}`,
+    `pn=${encodeURIComponent(d.upiName || "Lenore Trading LLP")}`,
+    ...(amountPaise && amountPaise > 0
+      ? [`am=${(amountPaise / 100).toFixed(2)}`]
+      : []),
+    "cu=INR",
+    ...(note ? [`tn=${encodeURIComponent(note.slice(0, 50))}`] : []),
+  ];
+  return `upi://pay?${params.join("&")}`;
+}
+/** Amount still to be paid on an invoice. */
+export const invoiceDue = (i: {
+  total: number;
+  credited: number;
+  paid: number;
+  refunded: number;
+}) => Math.max(0, i.total - i.credited - i.paid + i.refunded);
 const gstin = z
   .string()
   .trim()

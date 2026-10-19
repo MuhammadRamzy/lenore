@@ -9,6 +9,7 @@ import { cleanup } from "../src/server/index";
 import { quotationText } from "../src/client/quotation";
 import type { Quotation, TeamMember } from "../src/shared";
 import { inventoryCsv } from "../src/client/export";
+import { upiLink } from "../src/erp";
 import {
   amountFromText,
   financeCsv,
@@ -90,6 +91,7 @@ beforeEach(async () => {
       "staff_users",
       "rate_limits",
       "catalogue_sessions",
+      "website_categories",
     ].map((t) =>
       bindings.DB.prepare(
         // Invoiced products are permanent records; leave them in place.
@@ -104,6 +106,9 @@ beforeEach(async () => {
   ).run();
   await bindings.DB.prepare(
     "UPDATE settings SET pricing_mode='mrp',discount_cap_bp=1000,whatsapp='' WHERE id=1",
+  ).run();
+  await bindings.DB.prepare(
+    "UPDATE website_settings SET show_products=1,show_prices=1,show_stock=1 WHERE id=1",
   ).run();
   token = crypto.randomUUID();
   await bindings.DB.prepare(
@@ -1199,6 +1204,123 @@ describe("finance subledger", () => {
   });
 });
 
+describe("website controls", () => {
+  it("hides products, collections, prices and stock from the public only", async () => {
+    const shown = await create({
+      code: "W-1",
+      name: "Shown mixer",
+      published: true,
+    });
+    const hidden = await create({
+      code: "W-2",
+      name: "Hidden mixer",
+      published: true,
+    });
+    const other = await create({
+      code: "W-3",
+      name: "Rain shower",
+      category: "Showers",
+      published: true,
+    });
+    const page = (path: string) =>
+      SELF.fetch(`${base}${path}`).then((r) => r.text());
+    expect(
+      (
+        await request(
+          "/admin/website/products",
+          { ids: [hidden.id], onWebsite: false },
+          "PUT",
+        )
+      ).status,
+    ).toBe(200);
+    const site = (await (await request("/admin/website")).json()) as {
+      settings: { revision: number };
+    };
+    expect(
+      (
+        await request(
+          "/admin/website/categories",
+          {
+            categories: [
+              { name: "Showers", hidden: true, sortOrder: 1, intro: "" },
+            ],
+          },
+          "PUT",
+        )
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await request(
+          "/admin/website/settings",
+          {
+            showProducts: true,
+            showPrices: false,
+            showStock: false,
+            revision: site.settings.revision,
+          },
+          "PUT",
+        )
+      ).status,
+    ).toBe(200);
+    const collection = await page("/collections/basin-mixers");
+    expect(collection).toContain("Shown mixer");
+    expect(collection).not.toContain("Hidden mixer");
+    expect(collection).not.toContain("1,500");
+    expect((await SELF.fetch(`${base}/collections/showers`)).status).toBe(404);
+    expect((await SELF.fetch(`${base}/products/${hidden.slug}`)).status).toBe(
+      404,
+    );
+    // Anonymous catalogue readers get the website's view; staff still see everything.
+    const publicList = (await (
+      await request("/catalogue", undefined, "GET", false)
+    ).json()) as CatalogueProduct[];
+    expect(publicList.map((p) => p.code)).toEqual(["W-1"]);
+    expect(publicList[0]).toMatchObject({
+      pricePaise: null,
+      availability: null,
+    });
+    const staffList = (await (
+      await request("/catalogue")
+    ).json()) as CatalogueProduct[];
+    expect(staffList.map((p) => p.code).sort()).toEqual(["W-1", "W-2", "W-3"]);
+    expect(shown.id).not.toBe(other.id);
+  });
+  it("limits featured products to 12", async () => {
+    const ids: string[] = [];
+    for (let i = 0; i < 13; i++)
+      ids.push(
+        (
+          await create({
+            code: `F-${i}`,
+            name: `Featured ${i}`,
+            published: true,
+          })
+        ).id,
+      );
+    expect(
+      (
+        await request(
+          "/admin/website/products",
+          { ids: ids.slice(0, 12), featured: true },
+          "PUT",
+        )
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await request(
+          "/admin/website/products",
+          { ids: [ids[12]], featured: true },
+          "PUT",
+        )
+      ).status,
+    ).toBe(400);
+    const home = await SELF.fetch(`${base}/`).then((r) => r.text());
+    expect(home).toContain("Featured 11");
+  });
+});
+
 describe("catalogue access", () => {
   const visitor = (path: string, init: RequestInit = {}, cookie = "") =>
     SELF.fetch(`${base}/api${path}`, {
@@ -1829,7 +1951,7 @@ describe("search engine rendering", () => {
       "frame-ancestors 'none'",
     );
   });
-  it("lists public products in the sitemap and hides them when the catalogue is private", async () => {
+  it("lists public products in the sitemap and hides them when the website hides products", async () => {
     const p = await create({
       published: true,
       name: "Rain shower",
@@ -1844,7 +1966,7 @@ describe("search engine rendering", () => {
     expect(html).toContain('"@type":"Product"');
     expect(html).toContain('"price":"1500.00"');
     await bindings.DB.prepare(
-      "UPDATE catalogue_access SET mode='accounts' WHERE id=1",
+      "UPDATE website_settings SET show_products=0 WHERE id=1",
     ).run();
     xml = await (await page("/sitemap.xml")).text();
     expect(xml).not.toContain("/products/");
@@ -2263,6 +2385,73 @@ describe("ERP and POS", () => {
       status: "closed",
       expectedCash: 200000 + 118000 - 50000 - 8000,
     });
+  });
+});
+
+describe("UPI and bank details", () => {
+  it("builds a scannable UPI link for an exact amount", () => {
+    expect(
+      upiLink(
+        { upiId: "lenore@okhdfcbank", upiName: "Lenore Trading LLP" },
+        485000,
+        "LT/26-27/0007",
+      ),
+    ).toBe(
+      "upi://pay?pa=lenore@okhdfcbank&pn=Lenore%20Trading%20LLP&am=4850.00&cu=INR&tn=LT%2F26-27%2F0007",
+    );
+    expect(upiLink({ upiId: "", upiName: "" }, 100)).toBeNull();
+  });
+  it("saves payment details, validates them and sends them to the counter", async () => {
+    const s = (await (await request("/admin/erp/settings")).json()) as {
+      revision: number;
+      invoicePrefix: string;
+      stateCode: string;
+      receiptFooter: string;
+      blockSize: number;
+    };
+    const payment = {
+      upiId: "lenore@okhdfcbank",
+      upiName: "Lenore Trading LLP",
+      bankAccountName: "Lenore Trading LLP",
+      bankName: "Sample Bank",
+      bankAccount: "123456789012",
+      bankIfsc: "sbin0001234",
+      bankBranch: "Kuttiady",
+      qrOnBills: "due",
+      bankOnInvoice: true,
+    };
+    const base = {
+      invoicePrefix: s.invoicePrefix,
+      stateCode: s.stateCode,
+      receiptFooter: s.receiptFooter,
+      blockSize: s.blockSize,
+      revision: s.revision,
+    };
+    expect(
+      (
+        await request(
+          "/admin/erp/settings",
+          { ...base, payment: { ...payment, upiId: "not a upi id" } },
+          "PUT",
+        )
+      ).status,
+    ).toBe(400);
+    const saved = await request(
+      "/admin/erp/settings",
+      { ...base, payment },
+      "PUT",
+    );
+    expect(saved.status).toBe(200);
+    expect(
+      ((await saved.json()) as { payment: { bankIfsc: string } }).payment
+        .bankIfsc,
+    ).toBe("SBIN0001234");
+    const boot = (await (
+      await request(`/pos/bootstrap?device=${crypto.randomUUID()}`)
+    ).json()) as {
+      settings: { payment: { upiId: string } };
+    };
+    expect(boot.settings.payment.upiId).toBe("lenore@okhdfcbank");
   });
 });
 

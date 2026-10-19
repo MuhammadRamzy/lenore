@@ -37,6 +37,7 @@ Updated 2026-10-19. Source: owner instructions in this project's working session
 | WEB-4 | Enquiry form (name, phone, message, interest) stored for staff follow-up; rate-limited. | A |
 | WEB-5 | Tap-to-call, WhatsApp and email links everywhere they help; map link once supplied. | A |
 | WEB-6 | Minimalist aesthetic: whitespace, neutral palette, one bronze accent from the signboard logo, sans-serif typography (Manrope), subtle hover/press transitions. | A |
+| WEB-8 | Admins control what the website shows, separately from the sales catalogue: hide individual products or whole collections, order collections and add an introduction, pick up to 12 featured products for the home page, and switch product listings, prices and stock status on or off. Hidden items stay available to the sales team. | A |
 | WEB-7 | Responsive from 320 px; accessible (WCAG 2.2 AA intent): semantic landmarks, keyboard use, visible focus, contrast, reduced motion, alt text. | A |
 
 ## 4. SEO and performance
@@ -128,6 +129,7 @@ Updated 2026-10-19. Source: owner instructions in this project's working session
 | POS-5 | Cash register: opening float, cash in/out, day close (Z report). | B |
 | POS-6 | Customers: records, credit ledger, collections, dealer/contractor price lists. | B |
 | POS-7 | Receipts/invoices printed (80 mm or A4) and shared on WhatsApp. | B |
+| POS-8 | UPI scan-to-pay: admins set the shop's UPI ID and bank details; the counter shows a UPI QR for the exact amount when UPI is chosen or a balance is due; the QR can print on receipts and A4 invoices (never, only when an amount is due, or always), and bank details can print on A4 invoices. | B |
 | ERP-1 | Purchases, supplier bills, payables and input tax. | B |
 | ERP-2 | Invoices, returns and purchases post automatically into the finance subledger. | B |
 | ERP-3 | Reports: sales by day/cashier/salesperson/product, GSTR-1/3B data, stock valuation, dead stock. | B |
