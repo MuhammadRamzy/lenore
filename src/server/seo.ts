@@ -58,7 +58,8 @@ type Head = {
   type?: "website" | "product";
   image?: string;
   jsonLd?: object[];
-  manifest?: boolean;
+  /** Installable app shell: its own manifest, icon and colour. */
+  app?: { manifest: string; icon: string; theme: string; title: string };
 };
 function headTags(c: AppContext, h: Head) {
   const base = origin(c);
@@ -80,12 +81,15 @@ function headTags(c: AppContext, h: Head) {
     `<meta name="geo.region" content="IN-KL" />`,
     `<meta name="geo.placename" content="Kuttiady, Kozhikode" />`,
   ];
-  if (h.manifest)
+  if (h.app)
     tags.push(
-      `<link rel="manifest" href="/manifest.webmanifest" />`,
+      `<link rel="manifest" href="${h.app.manifest}" />`,
+      `<link rel="apple-touch-icon" href="${h.app.icon}" />`,
+      `<meta name="theme-color" content="${h.app.theme}" />`,
       `<meta name="apple-mobile-web-app-capable" content="yes" />`,
       `<meta name="mobile-web-app-capable" content="yes" />`,
-      `<meta name="apple-mobile-web-app-title" content="Lenore" />`,
+      `<meta name="apple-mobile-web-app-status-bar-style" content="default" />`,
+      `<meta name="apple-mobile-web-app-title" content="${h.app.title}" />`,
     );
   for (const item of h.jsonLd ?? [])
     tags.push(
@@ -483,22 +487,46 @@ routes.get("/q/:token", async (c) => {
 });
 
 /** Installable app shells: sales catalogue and staff workspace (client-rendered, noindex). */
-const shell = (title: string) => async (c: AppContext) =>
-  htmlResponse(
-    c,
-    {
-      title,
-      description: "Lenore team workspace.",
-      path: new URL(c.req.url).pathname,
-      noindex: true,
-      manifest: true,
-    },
-    null,
-  );
-routes.get("/catalogue", shell("Lenore Catalogue"));
-routes.get("/catalogue/*", shell("Lenore Catalogue"));
-routes.get("/manage", shell("Lenore Workspace"));
-routes.get("/manage/*", shell("Lenore Workspace"));
+const apps = {
+  catalogue: {
+    manifest: "/manifest.webmanifest",
+    icon: "/icons/apple-touch-icon.png",
+    theme: "#ffffff",
+    title: "Lenore",
+  },
+  admin: {
+    manifest: "/manage.webmanifest",
+    icon: "/icons/admin-192.png",
+    theme: "#202a34",
+    title: "Lenore Admin",
+  },
+  pos: {
+    manifest: "/pos.webmanifest",
+    icon: "/icons/pos-192.png",
+    theme: "#ffffff",
+    title: "Billing",
+  },
+};
+const shell =
+  (title: string, app: (typeof apps)[keyof typeof apps]) =>
+  async (c: AppContext) =>
+    htmlResponse(
+      c,
+      {
+        title,
+        description: "Lenore team workspace.",
+        path: new URL(c.req.url).pathname,
+        noindex: true,
+        app,
+      },
+      null,
+    );
+routes.get("/catalogue", shell("Lenore Catalogue", apps.catalogue));
+routes.get("/catalogue/*", shell("Lenore Catalogue", apps.catalogue));
+routes.get("/pos", shell("Lenore Billing", apps.pos));
+routes.get("/pos/*", shell("Lenore Billing", apps.pos));
+routes.get("/manage", shell("Lenore Admin", apps.admin));
+routes.get("/manage/*", shell("Lenore Admin", apps.admin));
 
 routes.get("/robots.txt", (c) =>
   c.text(

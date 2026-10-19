@@ -1,0 +1,22 @@
+{
+  "name": "Lenore Admin",
+  "short_name": "Lenore Admin",
+  "description": "Lenore staff workspace: billing, inventory, quotations, team and finance.",
+  "id": "/manage",
+  "start_url": "/manage",
+  "scope": "/manage",
+  "display": "standalone",
+  "background_color": "#f3f5f7",
+  "theme_color": "#202a34",
+  "icons": [
+    { "src": "/icons/admin-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/admin-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/admin-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Billing counter", "url": "/pos" },
+    { "name": "Invoices", "url": "/manage#billing" },
+    { "name": "Expenses", "url": "/manage#expenses" },
+    { "name": "Inventory", "url": "/manage#inventory" }
+  ]
+}

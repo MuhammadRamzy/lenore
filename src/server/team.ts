@@ -77,7 +77,16 @@ routes.put("/:id", async (c) => {
     c.env.DB.prepare(
       `UPDATE staff_users SET name=?,role=?,active=?,max_discount_bp=?,pos_access=?,password_hash=COALESCE(?,password_hash),revision=revision+1
       WHERE id=? AND revision=? RETURNING id`,
-    ).bind(d.name, d.role, +d.active, d.maxDiscountBp, +d.posAccess, hash, id, d.revision),
+    ).bind(
+      d.name,
+      d.role,
+      +d.active,
+      d.maxDiscountBp,
+      +d.posAccess,
+      hash,
+      id,
+      d.revision,
+    ),
     // Deactivation, role or password changes end existing sessions at once.
     c.env.DB.prepare(
       `DELETE FROM sessions WHERE user_id=? AND EXISTS(SELECT 1 FROM staff_users WHERE id=? AND revision=?)

@@ -20,6 +20,14 @@ if (data) {
       <Site page={page} />
     </StrictMode>,
   );
+} else if (location.pathname.startsWith("/pos")) {
+  void import("./pos/app").then(({ PosApp }) =>
+    createRoot(root).render(
+      <StrictMode>
+        <PosApp />
+      </StrictMode>,
+    ),
+  );
 } else if (location.pathname.startsWith("/manage")) {
   void import("./management").then(({ Management }) =>
     createRoot(root).render(

@@ -1,7 +1,7 @@
 // Lenore app shell cache. Never caches API responses, so signed-in data and
 // revoked access are always decided by the server.
-const CACHE = "lenore-shell-v1";
-const SHELL = ["/catalogue", "/manifest.webmanifest", "/icons/icon-192.png"];
+const CACHE = "lenore-shell-v2";
+const SHELL = ["/catalogue", "/manage", "/pos", "/manifest.webmanifest", "/manage.webmanifest", "/pos.webmanifest"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -33,14 +33,17 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   // App navigations: network first, cached shell when offline.
-  if (event.request.mode === "navigate" && /^\/(catalogue|manage)/.test(url.pathname)) {
+  // Each installed app (catalogue, admin, billing) keeps its own offline shell.
+  const app = /^\/(catalogue|manage|pos)/.exec(url.pathname)?.[1];
+  if (event.request.mode === "navigate" && app) {
+    const key = `/${app}`;
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          if (response.ok) caches.open(CACHE).then((c) => c.put("/catalogue", response.clone()));
+          if (response.ok) caches.open(CACHE).then((c) => c.put(key, response.clone()));
           return response;
         })
-        .catch(() => caches.match("/catalogue")),
+        .catch(() => caches.match(key)),
     );
   }
 });

@@ -33,6 +33,15 @@ import {
   Upload,
   Printer,
   Images,
+  Receipt,
+  UserRound,
+  Wallet,
+  FileSpreadsheet,
+  Truck,
+  Banknote,
+  SlidersVertical,
+  Menu,
+  Calculator,
 } from "lucide-react";
 import {
   type Product,
@@ -58,21 +67,55 @@ import {
   TeamPanel,
 } from "./admin/panels";
 import "./admin/admin.css";
+import {
+  BillingPanel,
+  BillingSettingsPanel,
+  CustomersPanel,
+  ExpensesPanel,
+  PurchasesPanel,
+  RegisterPanel,
+  ReportsPanel,
+} from "./admin/erp";
 
 const navigation = [
-  { id: "overview", label: "Overview", icon: LayoutDashboard },
-  { id: "insights", label: "Insights", icon: BarChart3 },
-  { id: "quotations", label: "Quotations", icon: FileText },
-  { id: "products", label: "Products", icon: Package },
-  { id: "inventory", label: "Inventory", icon: Boxes },
-  { id: "catalogue", label: "Catalogue", icon: Layers3 },
-  { id: "enquiries", label: "Enquiries", icon: ClipboardList },
-  { id: "team", label: "Team", icon: Users },
-  { id: "access", label: "Access & pricing", icon: ShieldCheck },
-  { id: "finance", label: "Finance", icon: Landmark },
-  { id: "activity", label: "Activity", icon: RefreshCw },
-  { id: "settings", label: "Settings", icon: Settings },
+  { id: "overview", label: "Overview", icon: LayoutDashboard, group: "Sales" },
+  { id: "insights", label: "Insights", icon: BarChart3, group: "Sales" },
+  { id: "quotations", label: "Quotations", icon: FileText, group: "Sales" },
+  { id: "enquiries", label: "Enquiries", icon: ClipboardList, group: "Sales" },
+  { id: "billing", label: "Invoices", icon: Receipt, group: "Billing" },
+  { id: "customers", label: "Customers", icon: UserRound, group: "Billing" },
+  { id: "register", label: "Cash register", icon: Wallet, group: "Billing" },
+  {
+    id: "reports",
+    label: "Reports & GST",
+    icon: FileSpreadsheet,
+    group: "Billing",
+  },
+  { id: "products", label: "Products", icon: Package, group: "Stock" },
+  { id: "inventory", label: "Inventory", icon: Boxes, group: "Stock" },
+  { id: "catalogue", label: "Catalogue", icon: Layers3, group: "Stock" },
+  { id: "purchases", label: "Purchases", icon: Truck, group: "Stock" },
+  { id: "expenses", label: "Expenses", icon: Banknote, group: "Money" },
+  { id: "finance", label: "Finance", icon: Landmark, group: "Money" },
+  { id: "team", label: "Team", icon: Users, group: "Admin" },
+  {
+    id: "access",
+    label: "Access & pricing",
+    icon: ShieldCheck,
+    group: "Admin",
+  },
+  {
+    id: "billing-settings",
+    label: "Billing settings",
+    icon: SlidersVertical,
+    group: "Admin",
+  },
+  { id: "activity", label: "Activity", icon: RefreshCw, group: "Admin" },
+  { id: "settings", label: "Settings", icon: Settings, group: "Admin" },
 ];
+const groups = ["Sales", "Billing", "Stock", "Money", "Admin"];
+/** Phone tab bar: the daily essentials; everything else is one tap away in Menu. */
+const mobileTabs = ["overview", "billing", "inventory", "expenses"];
 const fetchWorkspace = () =>
   Promise.all([
     api<Product[]>("/admin/products"),
@@ -137,6 +180,7 @@ export function Management() {
   const [tool, setTool] = useState<
     "count" | "import" | "photos" | "labels" | null
   >(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [view, setView] = useState(() => {
     const hash = location.hash.slice(1);
     return navigation.some((n) => n.id === hash) ? hash : "overview";
@@ -373,21 +417,32 @@ export function Management() {
       <aside className="sidebar">
         <Brand compact />
         <div className="workspace-label">Management workspace</div>
-        <nav aria-label="Workspace navigation">
-          {navigation.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              className={view === id ? "selected" : ""}
-              aria-label={label}
-              aria-current={view === id ? "page" : undefined}
-              onClick={() => navigate(id)}
-            >
-              <Icon size={19} />
-              <span>{label}</span>
-              {id === "enquiries" && quotes.some((q) => q.status === "new") && (
-                <b>{quotes.filter((q) => q.status === "new").length}</b>
-              )}
-            </button>
+        <nav aria-label="Workspace navigation" className="grouped-nav">
+          <a className="pos-launch" href="/pos">
+            <Calculator size={18} /> <span>Open billing counter</span>
+          </a>
+          {groups.map((g) => (
+            <div key={g} className="nav-group">
+              <span className="nav-group-label">{g}</span>
+              {navigation
+                .filter((n) => n.group === g)
+                .map(({ id, label, icon: Icon }) => (
+                  <button
+                    key={id}
+                    className={view === id ? "selected" : ""}
+                    aria-label={label}
+                    aria-current={view === id ? "page" : undefined}
+                    onClick={() => navigate(id)}
+                  >
+                    <Icon size={19} />
+                    <span>{label}</span>
+                    {id === "enquiries" &&
+                      quotes.some((q) => q.status === "new") && (
+                        <b>{quotes.filter((q) => q.status === "new").length}</b>
+                      )}
+                  </button>
+                ))}
+            </div>
           ))}
         </nav>
         <div className="sidebar-bottom">
@@ -446,6 +501,18 @@ export function Management() {
                     team: "Salespeople and admins, their access and discount limits.",
                     access:
                       "Who can open the catalogue and how quotations may be priced.",
+                    billing:
+                      "Tax invoices from the counter, with returns and payments.",
+                    customers:
+                      "Customer accounts, credit, ledgers and payments received.",
+                    register: "Counter shifts, cash counts and differences.",
+                    reports:
+                      "Sales, GST (HSN, B2B, B2C), margins, expenses and stock alerts.",
+                    purchases:
+                      "Supplier bills, payments and returns. Purchases add stock.",
+                    expenses: "Day-to-day spending with bills attached.",
+                    "billing-settings":
+                      "Invoice numbering, receipts and price lists.",
                     products:
                       "Keep product information accurate, complete and easy to find.",
                     inventory:
@@ -510,6 +577,23 @@ export function Management() {
             <TeamPanel notify={setNotice} />
           ) : view === "access" ? (
             <AccessPanel notify={setNotice} />
+          ) : view === "billing" ? (
+            <BillingPanel />
+          ) : view === "customers" ? (
+            <CustomersPanel />
+          ) : view === "register" ? (
+            <RegisterPanel />
+          ) : view === "reports" ? (
+            <ReportsPanel />
+          ) : view === "expenses" ? (
+            <ExpensesPanel />
+          ) : view === "purchases" ? (
+            <PurchasesPanel
+              products={products}
+              onStockChanged={() => void refresh()}
+            />
+          ) : view === "billing-settings" ? (
+            <BillingSettingsPanel products={products} notify={setNotice} />
           ) : !workspaceReady ? (
             <section className="work-section empty" role="status">
               <h2>
@@ -969,6 +1053,76 @@ export function Management() {
           </footer>
         </main>
       </div>
+      <nav className="admin-tabbar" aria-label="Workspace sections">
+        {mobileTabs.map((id) => {
+          const item = navigation.find((n) => n.id === id)!;
+          return (
+            <button
+              key={id}
+              aria-current={view === id ? "page" : undefined}
+              onClick={() => navigate(id)}
+            >
+              <item.icon size={22} />
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
+        <button aria-expanded={menuOpen} onClick={() => setMenuOpen(true)}>
+          <Menu size={22} />
+          <span>Menu</span>
+        </button>
+      </nav>
+      {menuOpen && (
+        <Overlay onClose={() => setMenuOpen(false)}>
+          <div className="admin-menu" onClick={() => setMenuOpen(false)}>
+            <section
+              aria-label="All sections"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="admin-menu-head">
+                <strong>Lenore Admin</strong>
+                <button
+                  className="icon-button"
+                  aria-label="Close menu"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <X />
+                </button>
+              </div>
+              <a className="pos-launch" href="/pos">
+                <Calculator size={18} /> Open billing counter
+              </a>
+              {groups.map((g) => (
+                <div key={g} className="admin-menu-group">
+                  <span className="nav-group-label">{g}</span>
+                  <div>
+                    {navigation
+                      .filter((n) => n.group === g)
+                      .map(({ id, label, icon: Icon }) => (
+                        <button
+                          key={id}
+                          aria-current={view === id ? "page" : undefined}
+                          onClick={() => {
+                            navigate(id);
+                            setMenuOpen(false);
+                          }}
+                        >
+                          <Icon size={20} />
+                          {label}
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              ))}
+              <div className="admin-menu-foot">
+                <a href="/catalogue">Sales catalogue</a>
+                <a href="/">Website</a>
+                <button onClick={() => void signOut()}>Sign out</button>
+              </div>
+            </section>
+          </div>
+        </Overlay>
+      )}
       {tool === "count" && (
         <StockCount
           products={products}

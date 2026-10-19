@@ -11,3 +11,7 @@ UPDATE products SET slug=lower(replace(name,' ','-'))||'-'||lower(code), price_p
   WHEN 'DEMO-BM01' THEN 485000 WHEN 'DEMO-SH02' THEN 725000 WHEN 'DEMO-TP03' THEN 165000 WHEN 'DEMO-AC04' THEN 219000 END),
   last_actor='local-demo'
 WHERE code LIKE 'DEMO-%' AND slug=lower(code);
+-- Illustrative billing fields for demo items only (verify real HSN/GST before live use).
+UPDATE products SET hsn=CASE WHEN category='Sanitary ware' THEN '6910' WHEN category='Accessories' THEN '7324' ELSE '8481' END,
+  gst_rate_bp=1800, cost_paise=COALESCE(cost_paise, CAST(price_paise*0.6 AS INTEGER)), barcode=COALESCE(barcode, '890000000'||substr(code,-4))
+WHERE code LIKE 'DEMO-%' AND gst_rate_bp IS NULL;

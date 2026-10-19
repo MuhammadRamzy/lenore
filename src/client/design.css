@@ -54,31 +54,32 @@ body {
   :where(h1, h2, h3, p, figure, dl, dd, ul, ol, fieldset) {
   margin: 0;
 }
-:where(.site, .app, .sheet) :where(ul, ol) {
+:where(.site, .app, .sheet, .pos) :where(ul, ol) {
   padding: 0;
   list-style: none;
 }
-:where(.site, .app, .signin, .sheet) img {
+:where(.site, .app, .signin, .sheet, .pos) img {
   display: block;
   max-width: 100%;
   height: auto;
 }
-:where(.site, .app, .signin, .sheet) a {
+:where(.site, .app, .signin, .sheet, .pos) a {
   color: inherit;
   text-decoration: none;
 }
-:where(.site, .app, .signin, .sheet) :where(button, input, select, textarea) {
+:where(.site, .app, .signin, .sheet, .pos)
+  :where(button, input, select, textarea) {
   font: inherit;
   color: inherit;
   -webkit-tap-highlight-color: transparent;
 }
-:where(.site, .app, .signin, .sheet) button {
+:where(.site, .app, .signin, .sheet, .pos) button {
   cursor: pointer;
   background: none;
   border: 0;
   padding: 0;
 }
-:where(.site, .app, .signin, .sheet) :focus-visible {
+:where(.site, .app, .signin, .sheet, .pos) :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 6px;
@@ -91,7 +92,7 @@ body {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
-:is(.site, .app, .sheet, .signin, .app-splash) .muted {
+:is(.site, .app, .sheet, .signin, .app-splash, .pos) .muted {
   color: var(--muted);
 }
 .accent {
@@ -250,7 +251,7 @@ body {
   line-height: 16px;
 }
 .text-btn,
-:is(.site, .app, .sheet, .signin, .app-splash) .text-link {
+:is(.site, .app, .sheet, .signin, .app-splash, .pos) .text-link {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -262,7 +263,7 @@ body {
     border-color 0.2s var(--ease),
     color 0.2s;
 }
-:is(.site, .app, .sheet, .signin, .app-splash) .text-link:hover,
+:is(.site, .app, .sheet, .signin, .app-splash, .pos) .text-link:hover,
 .text-btn:hover:not(:disabled) {
   border-bottom-color: currentColor;
 }
@@ -271,14 +272,14 @@ body {
 }
 
 /* Fields */
-:where(.site, .app, .signin, .sheet) label {
+:where(.site, .app, .signin, .sheet, .pos) label {
   display: grid;
   gap: 6px;
   font-size: 13px;
   font-weight: 600;
   color: var(--ink-2);
 }
-:where(.site, .app, .signin, .sheet)
+:where(.site, .app, .signin, .sheet, .pos)
   :where(input:not([type="checkbox"], [type="radio"]), select, textarea) {
   width: 100%;
   min-height: 46px;
@@ -292,20 +293,21 @@ body {
     border-color 0.2s var(--ease),
     box-shadow 0.2s var(--ease);
 }
-:where(.site, .app, .signin, .sheet) textarea {
+:where(.site, .app, .signin, .sheet, .pos) textarea {
   resize: vertical;
 }
-:where(.site, .app, .signin, .sheet) :where(input, select, textarea):focus {
+:where(.site, .app, .signin, .sheet, .pos)
+  :where(input, select, textarea):focus {
   outline: none;
   border-color: var(--ink);
   box-shadow: 0 0 0 3px rgb(138 90 43 / 0.18);
 }
-:is(.site, .app, .sheet, .signin, .app-splash) .error {
+:is(.site, .app, .sheet, .signin, .app-splash, .pos) .error {
   color: var(--out);
   font-size: 14px;
   font-weight: 600;
 }
-:is(.site, .app, .sheet, .signin, .app-splash) .success {
+:is(.site, .app, .sheet, .signin, .app-splash, .pos) .success {
   display: flex;
   gap: 8px;
   align-items: center;
@@ -455,17 +457,17 @@ body {
   color: var(--ink);
   box-shadow: var(--shadow);
 }
-:is(.site, .app, .sheet, .signin, .app-splash) .banner {
+:is(.site, .app, .sheet, .signin, .app-splash, .pos) .banner {
   padding: 10px 14px;
   border-radius: 12px;
   font-size: 13.5px;
   font-weight: 500;
 }
-:is(.site, .app, .sheet, .signin, .app-splash) .banner.warn {
+:is(.site, .app, .sheet, .signin, .app-splash, .pos) .banner.warn {
   background: var(--low-bg);
   color: var(--low);
 }
-:is(.site, .app, .sheet, .signin, .app-splash) .banner.error {
+:is(.site, .app, .sheet, .signin, .app-splash, .pos) .banner.error {
   background: var(--out-bg);
   color: var(--out);
 }
@@ -1214,7 +1216,7 @@ body {
   background: var(--accent-soft);
   color: var(--accent);
 }
-:is(.site, .app, .sheet, .signin, .app-splash) .badge {
+:is(.site, .app, .sheet, .signin, .app-splash, .pos) .badge {
   position: absolute;
   top: -2px;
   right: 6px;
@@ -1324,13 +1326,13 @@ body {
   padding: 12px 16px 8px;
   background: var(--surface);
 }
-:is(.site, .app, .sheet, .signin, .app-splash) .search {
+:is(.site, .app, .sheet, .signin, .app-splash, .pos) .search {
   position: relative;
   flex: 1;
   display: flex;
   align-items: center;
 }
-:is(.site, .app, .sheet, .signin, .app-splash) .search > svg {
+:is(.site, .app, .sheet, .signin, .app-splash, .pos) .search > svg {
   position: absolute;
   left: 14px;
   color: var(--muted);
@@ -1344,7 +1346,7 @@ body {
   border-radius: 14px;
   border-color: var(--line);
 }
-:is(.site, .app, .sheet, .signin, .app-splash) .search .icon-btn {
+:is(.site, .app, .sheet, .signin, .app-splash, .pos) .search .icon-btn {
   position: absolute;
   right: 2px;
   width: 40px;

@@ -39,15 +39,13 @@ type ErpSettings = {
   revision: number;
 };
 async function erpSettings(db: D1Database): Promise<ErpSettings> {
-  const r = await db
-    .prepare("SELECT * FROM erp_settings WHERE id=1")
-    .first<{
-      invoice_prefix: string;
-      state_code: string;
-      receipt_footer: string;
-      block_size: number;
-      revision: number;
-    }>();
+  const r = await db.prepare("SELECT * FROM erp_settings WHERE id=1").first<{
+    invoice_prefix: string;
+    state_code: string;
+    receipt_footer: string;
+    block_size: number;
+    revision: number;
+  }>();
   return {
     invoicePrefix: r?.invoice_prefix ?? "LT",
     stateCode: r?.state_code ?? "32",

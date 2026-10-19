@@ -1,0 +1,395 @@
+/* Billing counter: dense, touch-friendly, two panes on tablets and desktops. */
+.pos {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-height: 100dvh;
+  background: var(--surface);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.pos *,
+.pos *::before,
+.pos *::after {
+  box-sizing: border-box;
+}
+.pos :where(h1, h2, p, ul) {
+  margin: 0;
+}
+.pos ul {
+  padding: 0;
+  list-style: none;
+}
+:where(.pos) button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.pos input,
+.pos select {
+  font: inherit;
+}
+.pos-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  padding: 10px 16px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.pos-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ok);
+}
+.pos-status.offline {
+  color: var(--low);
+}
+.pos-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+.pos-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 440px);
+  min-height: 0;
+}
+.pos-catalog {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 12px;
+  padding: 16px;
+  min-height: 0;
+}
+.pos-catalog .search {
+  position: relative;
+}
+.pos-catalog .search input {
+  min-height: 54px;
+  padding: 0 16px 0 44px;
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: var(--bg);
+  font-size: 17px;
+}
+.pos-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 10px;
+  align-content: start;
+  overflow: auto;
+  max-height: calc(100dvh - 210px);
+}
+.pos-grid button {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  min-height: 116px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+  text-align: left;
+  transition:
+    transform 0.12s var(--ease),
+    box-shadow 0.2s var(--ease);
+}
+.pos-grid button:hover {
+  box-shadow: 0 6px 20px rgb(20 20 20 / 0.08);
+}
+.pos-grid button:active {
+  transform: scale(0.97);
+}
+.pos-grid button.warn {
+  opacity: 0.7;
+}
+.pos-grid strong {
+  font-size: 14px;
+  line-height: 1.3;
+}
+.pos-code {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.pos-price {
+  font-weight: 700;
+}
+.pos-stock {
+  font-size: 12px;
+  color: var(--ok);
+}
+.pos-stock.out,
+.pos-flag {
+  font-size: 12px;
+  color: var(--out);
+}
+.pos-bill {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  background: var(--bg);
+  border-left: 1px solid var(--line);
+  max-height: calc(100dvh - 60px);
+  position: sticky;
+  top: 60px;
+}
+.pos-customer {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  text-align: left;
+}
+.pos-customer span {
+  display: grid;
+}
+.pos-customer small {
+  color: var(--muted);
+}
+.pos-lines {
+  flex: 1;
+  display: grid;
+  align-content: start;
+  overflow: auto;
+  min-height: 120px;
+}
+.pos-lines li {
+  display: grid;
+  gap: 4px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.pos-lines .muted {
+  font-size: 12px;
+}
+.pos-line-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+}
+.pos-line-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.pos .mini-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.pos .mini-field input {
+  width: 72px;
+  min-height: 36px;
+  border: 0;
+  border-radius: 0 10px 10px 0;
+  text-align: right;
+  font-weight: 700;
+}
+.pos .stepper input {
+  width: 44px;
+  border: 0;
+  text-align: center;
+  font-weight: 700;
+  background: transparent;
+}
+.pos-line-total {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.pos-totals {
+  display: grid;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-strong);
+  font-variant-numeric: tabular-nums;
+}
+.pos-totals div {
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+}
+.pos-totals .grand {
+  color: var(--ink);
+  font-size: 24px;
+  font-weight: 700;
+}
+.pos-pay-row {
+  display: flex;
+  gap: 10px;
+}
+.pos-change {
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--ok-bg);
+  color: var(--ok);
+  font-size: 18px;
+}
+.pos-done-total {
+  text-align: center;
+  font-size: 40px;
+  font-weight: 700;
+}
+.pos-foot {
+  padding: 6px 16px;
+}
+.print-area {
+  display: none;
+}
+@media (max-width: 900px) {
+  .pos-body {
+    grid-template-columns: 1fr;
+  }
+  .pos-bill {
+    position: static;
+    max-height: none;
+    border-left: 0;
+  }
+  .pos-grid {
+    max-height: 46dvh;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .pos-actions .btn {
+    flex: 1;
+  }
+}
+/* Printing: only the selected document. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    display: block;
+    position: absolute;
+    inset: 0 auto auto 0;
+  }
+  .receipt {
+    width: 72mm;
+    font:
+      11px/1.35 "Manrope",
+      sans-serif;
+    color: #000;
+  }
+  .receipt .center {
+    text-align: center;
+  }
+  .receipt .big {
+    font-size: 18px;
+    letter-spacing: 0.2em;
+  }
+  .receipt .row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .receipt .total {
+    font-size: 15px;
+    font-weight: 700;
+  }
+  .receipt .rule {
+    margin: 6px 0;
+    border-top: 1px dashed #000;
+  }
+  .receipt .muted {
+    font-size: 9px;
+  }
+  .receipt .item {
+    margin-bottom: 4px;
+  }
+  .a4-invoice {
+    width: 190mm;
+    font:
+      10pt/1.4 "Manrope",
+      sans-serif;
+    color: #000;
+  }
+  .a4-invoice header {
+    display: flex;
+    justify-content: space-between;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #000;
+  }
+  .a4-invoice .right {
+    text-align: right;
+  }
+  .a4-invoice .big {
+    font-size: 20pt;
+    letter-spacing: 0.2em;
+  }
+  .a4-invoice .party {
+    padding: 8px 0;
+  }
+  .a4-invoice table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .a4-invoice th,
+  .a4-invoice td {
+    padding: 4px;
+    border: 1px solid #999;
+    text-align: left;
+    vertical-align: top;
+  }
+  .a4-invoice small {
+    display: block;
+    color: #555;
+  }
+  .a4-invoice .num {
+    text-align: right;
+  }
+  .a4-invoice .totals {
+    display: grid;
+    justify-content: end;
+    margin-top: 8px;
+  }
+  .a4-invoice .totals div {
+    display: flex;
+    justify-content: space-between;
+    gap: 40px;
+  }
+  .a4-invoice .grand {
+    font-weight: 700;
+    font-size: 12pt;
+  }
+  .a4-invoice .words {
+    margin-top: 8px;
+    font-style: italic;
+  }
+  .a4-invoice footer {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 24px;
+  }
+  .a4-invoice .sign {
+    text-align: right;
+  }
+  @page {
+    margin: 8mm;
+  }
+}
