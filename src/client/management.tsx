@@ -1,3 +1,4 @@
+import "./styles.css";
 import { Overlay } from "./overlay";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -24,6 +25,14 @@ import {
   SlidersHorizontal,
   X,
   Landmark,
+  BarChart3,
+  FileText,
+  Users,
+  ShieldCheck,
+  ScanLine,
+  Upload,
+  Printer,
+  Images,
 } from "lucide-react";
 import {
   type Product,
@@ -37,13 +46,29 @@ import { api, ApiError, errorMessage } from "./api";
 import { Brand, type SiteConfig } from "./brand";
 import { downloadInventoryCsv } from "./export";
 import { FinanceWorkspace } from "./finance";
+import {
+  AccessPanel,
+  BulkPhotos,
+  ImportProducts,
+  InsightsPanel,
+  LabelSheet,
+  QuotationsPanel,
+  StockCount,
+  StockLedger,
+  TeamPanel,
+} from "./admin/panels";
+import "./admin/admin.css";
 
 const navigation = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "insights", label: "Insights", icon: BarChart3 },
+  { id: "quotations", label: "Quotations", icon: FileText },
   { id: "products", label: "Products", icon: Package },
   { id: "inventory", label: "Inventory", icon: Boxes },
   { id: "catalogue", label: "Catalogue", icon: Layers3 },
   { id: "enquiries", label: "Enquiries", icon: ClipboardList },
+  { id: "team", label: "Team", icon: Users },
+  { id: "access", label: "Access & pricing", icon: ShieldCheck },
   { id: "finance", label: "Finance", icon: Landmark },
   { id: "activity", label: "Activity", icon: RefreshCw },
   { id: "settings", label: "Settings", icon: Settings },
@@ -63,6 +88,12 @@ const emptyProduct: ProductInput = {
   pricePaise: null,
   lowStock: 5,
   published: false,
+  hsn: "",
+  gstRateBp: null,
+  barcode: "",
+  reorderQty: 0,
+  bin: "",
+  costPaise: null,
 };
 const date = (s: string) =>
   new Date(s).toLocaleString("en-IN", {
@@ -81,11 +112,31 @@ function productFields(p: Product): ProductInput {
     pricePaise: p.pricePaise,
     lowStock: p.lowStock,
     published: p.published,
+    hsn: p.hsn,
+    gstRateBp: p.gstRateBp,
+    barcode: p.barcode,
+    reorderQty: p.reorderQty,
+    bin: p.bin,
+    costPaise: p.costPaise,
   };
 }
 
-export function Management({ config }: { config: SiteConfig }) {
+export function Management() {
+  const [config, setConfig] = useState<SiteConfig>({
+    demo: false,
+    whatsapp: "",
+    integration: "disconnected",
+  });
+  useEffect(() => {
+    api<SiteConfig>("/config")
+      .then(setConfig)
+      .catch(() => undefined);
+  }, []);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  const [salesOnly, setSalesOnly] = useState(false);
+  const [tool, setTool] = useState<
+    "count" | "import" | "photos" | "labels" | null
+  >(null);
   const [view, setView] = useState(() => {
     const hash = location.hash.slice(1);
     return navigation.some((n) => n.id === hash) ? hash : "overview";
@@ -106,8 +157,11 @@ export function Management({ config }: { config: SiteConfig }) {
   const [quoteError, setQuoteError] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    api<{ authenticated: boolean }>("/session")
-      .then((r) => setSignedIn(r.authenticated))
+    api<{ authenticated: boolean; role: string | null }>("/session")
+      .then((r) => {
+        setSalesOnly(r.role === "sales");
+        setSignedIn(r.authenticated);
+      })
       .catch((e) => {
         setError(errorMessage(e));
         setSignedIn(false);
@@ -243,6 +297,13 @@ export function Management({ config }: { config: SiteConfig }) {
         </div>
         <section className="login-box">
           <h1>Lenore staff access</h1>
+          {salesOnly && (
+            <p className="error" role="status">
+              This is a salesperson account. Open the{" "}
+              <a href="/catalogue">sales catalogue</a>, or sign in with an admin
+              account.
+            </p>
+          )}
           <p>
             Sign in to manage Lenore’s products, inventory and sales catalogue.
           </p>
@@ -257,8 +318,13 @@ export function Management({ config }: { config: SiteConfig }) {
               const password = form.get("password");
               e.currentTarget.reset();
               try {
-                await api("/session", { username, password }, "POST");
-                setSignedIn(true);
+                const r = await api<{ authenticated: boolean; role: string }>(
+                  "/session",
+                  { username, password },
+                  "POST",
+                );
+                setSalesOnly(r.role === "sales");
+                setSignedIn(r.authenticated);
               } catch (e) {
                 setError(errorMessage(e));
               } finally {
@@ -267,7 +333,7 @@ export function Management({ config }: { config: SiteConfig }) {
             }}
           >
             <label>
-              Username
+              Username or phone
               <input
                 name="username"
                 required
@@ -373,6 +439,13 @@ export function Management({ config }: { config: SiteConfig }) {
                 {
                   {
                     overview: "Product, stock and enquiry status.",
+                    insights:
+                      "Quotations, team activity, popular products and stock value.",
+                    quotations:
+                      "Every quotation from the sales team, with filters and export.",
+                    team: "Salespeople and admins, their access and discount limits.",
+                    access:
+                      "Who can open the catalogue and how quotations may be priced.",
                     products:
                       "Keep product information accurate, complete and easy to find.",
                     inventory:
@@ -429,6 +502,14 @@ export function Management({ config }: { config: SiteConfig }) {
           )}
           {view === "finance" ? (
             <FinanceWorkspace />
+          ) : view === "insights" ? (
+            <InsightsPanel />
+          ) : view === "quotations" ? (
+            <QuotationsPanel />
+          ) : view === "team" ? (
+            <TeamPanel notify={setNotice} />
+          ) : view === "access" ? (
+            <AccessPanel notify={setNotice} />
           ) : !workspaceReady ? (
             <section className="work-section empty" role="status">
               <h2>
@@ -659,13 +740,43 @@ export function Management({ config }: { config: SiteConfig }) {
                       ))}
                   </select>
                 </label>
-                <button
-                  className="button"
-                  disabled={!visible.length}
-                  onClick={() => downloadInventoryCsv(visible)}
-                >
-                  <Download size={16} /> Export view (CSV)
-                </button>
+                <div className="tool-buttons">
+                  {view === "inventory" && (
+                    <button className="button" onClick={() => setTool("count")}>
+                      <ScanLine size={16} /> Stock count
+                    </button>
+                  )}
+                  {view === "products" && (
+                    <>
+                      <button
+                        className="button"
+                        onClick={() => setTool("import")}
+                      >
+                        <Upload size={16} /> Import CSV
+                      </button>
+                      <button
+                        className="button"
+                        onClick={() => setTool("photos")}
+                      >
+                        <Images size={16} /> Photos by code
+                      </button>
+                    </>
+                  )}
+                  <button
+                    className="button"
+                    disabled={!visible.length}
+                    onClick={() => setTool("labels")}
+                  >
+                    <Printer size={16} /> Labels
+                  </button>
+                  <button
+                    className="button"
+                    disabled={!visible.length}
+                    onClick={() => downloadInventoryCsv(visible)}
+                  >
+                    <Download size={16} /> Export view (CSV)
+                  </button>
+                </div>
               </div>
               <div className="data-table-wrap">
                 <table className="data-table">
@@ -858,6 +969,39 @@ export function Management({ config }: { config: SiteConfig }) {
           </footer>
         </main>
       </div>
+      {tool === "count" && (
+        <StockCount
+          products={products}
+          onClose={() => setTool(null)}
+          onSaved={async (m) => {
+            setTool(null);
+            setNotice(m);
+            await refresh();
+          }}
+        />
+      )}
+      {tool === "import" && (
+        <ImportProducts
+          onClose={() => setTool(null)}
+          onSaved={async (m) => {
+            setTool(null);
+            setNotice(m);
+            await refresh();
+          }}
+        />
+      )}
+      {tool === "photos" && (
+        <BulkPhotos
+          onClose={() => {
+            setTool(null);
+            void refresh();
+          }}
+          onSaved={setNotice}
+        />
+      )}
+      {tool === "labels" && (
+        <LabelSheet products={visible} onClose={() => setTool(null)} />
+      )}
       {editing && (
         <ProductEditor
           key={editing === "new" ? "new" : editing.id}
@@ -1194,6 +1338,89 @@ function ProductEditor({
                 onChange={(e) => field("lowStock", Number(e.target.value))}
               />
             </label>
+            <fieldset className="field-group">
+              <legend>Inventory and billing</legend>
+              <div className="form-row">
+                <label>
+                  Barcode
+                  <input
+                    maxLength={64}
+                    value={form.barcode}
+                    onChange={(e) => field("barcode", e.target.value.trim())}
+                    placeholder="Scan or type"
+                  />
+                </label>
+                <label>
+                  Shelf / bin
+                  <input
+                    maxLength={40}
+                    value={form.bin}
+                    onChange={(e) => field("bin", e.target.value)}
+                    placeholder="e.g. A-03"
+                  />
+                </label>
+              </div>
+              <div className="form-row">
+                <label>
+                  HSN code
+                  <input
+                    inputMode="numeric"
+                    maxLength={8}
+                    value={form.hsn}
+                    onChange={(e) =>
+                      field("hsn", e.target.value.replace(/\D/g, ""))
+                    }
+                  />
+                </label>
+                <label>
+                  GST rate %
+                  <input
+                    inputMode="decimal"
+                    value={form.gstRateBp === null ? "" : form.gstRateBp / 100}
+                    onChange={(e) =>
+                      field(
+                        "gstRateBp",
+                        e.target.value === ""
+                          ? null
+                          : Math.round(Number(e.target.value) * 100),
+                      )
+                    }
+                    placeholder="As per invoice"
+                  />
+                </label>
+              </div>
+              <div className="form-row">
+                <label>
+                  Reorder quantity
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={form.reorderQty}
+                    onChange={(e) =>
+                      field("reorderQty", Number(e.target.value))
+                    }
+                  />
+                </label>
+                <label>
+                  Unit cost in INR <span>(admin only)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.costPaise === null ? "" : form.costPaise / 100}
+                    onChange={(e) =>
+                      field(
+                        "costPaise",
+                        e.target.value === ""
+                          ? null
+                          : Math.round(Number(e.target.value) * 100),
+                      )
+                    }
+                  />
+                </label>
+              </div>
+            </fieldset>
             <label className="upload-field">
               <ImagePlus size={24} />
               <strong>{image ? image.name : "Add a product photograph"}</strong>
@@ -1287,8 +1514,15 @@ function StockEditor({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [operationId, setOperationId] = useState(() => crypto.randomUUID());
+  const kinds: Record<string, [string, number]> = {
+    receive: ["receipt", 1],
+    return_in: ["return_in", 1],
+    issue: ["issue", -1],
+    damage: ["damage", -1],
+    return_out: ["return_out", -1],
+  };
   const n = Number(quantity),
-    delta = mode === "receive" ? n : mode === "issue" ? -n : n - p.stock;
+    delta = mode === "count" ? n - p.stock : n * kinds[mode][1];
   const valid =
     quantity !== "" &&
     Number.isInteger(n) &&
@@ -1334,7 +1568,13 @@ function StockEditor({
               try {
                 await api(
                   `/admin/products/${p.id}/stock`,
-                  { operationId, revision: p.revision, delta, reason },
+                  {
+                    operationId,
+                    revision: p.revision,
+                    delta,
+                    reason,
+                    kind: mode === "count" ? "count" : kinds[mode][0],
+                  },
                   "POST",
                 );
                 await onSaved();
@@ -1349,7 +1589,10 @@ function StockEditor({
               Adjustment type
               <select value={mode} onChange={(e) => setMode(e.target.value)}>
                 <option value="receive">Receive stock</option>
+                <option value="return_in">Customer return</option>
                 <option value="issue">Issue stock</option>
+                <option value="damage">Damaged / write-off</option>
+                <option value="return_out">Return to supplier</option>
                 <option value="count">Set counted quantity</option>
               </select>
             </label>
@@ -1403,8 +1646,7 @@ function StockEditor({
               />
             </label>
             <p className="muted">
-              This change will be saved to the activity record. ERP stock is not
-              connected.
+              Every movement is recorded with its type, reason and your name.
             </p>
             {error && (
               <p className="error" role="alert">
@@ -1429,6 +1671,7 @@ function StockEditor({
               </button>
             </div>
           </form>
+          <StockLedger product={p} />
         </section>
       </div>
     </Overlay>

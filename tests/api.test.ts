@@ -5,7 +5,8 @@ import type { D1Migration } from "@cloudflare/vitest-plugin";
 import type { Bindings } from "../src/server";
 import type { Product, CatalogueProduct } from "../src/shared";
 import { sha256 } from "../src/server/auth";
-import { quotationText, quotationTotal } from "../src/client/quotation";
+import { quotationText } from "../src/client/quotation";
+import type { Quotation, TeamMember } from "../src/shared";
 import { inventoryCsv } from "../src/client/export";
 import {
   amountFromText,
@@ -83,16 +84,23 @@ beforeEach(async () => {
       "activity",
       "products",
       "quotes",
+      "product_views",
       "sessions",
+      "staff_users",
       "rate_limits",
       "catalogue_sessions",
     ].map((t) => bindings.DB.prepare(`DELETE FROM ${t}`)),
   );
   await bindings.DB.prepare(
-    "UPDATE catalogue_access SET enabled=0,password_hash=NULL WHERE id=1",
+    "UPDATE catalogue_access SET mode='public',enabled=0,password_hash=NULL WHERE id=1",
+  ).run();
+  await bindings.DB.prepare(
+    "UPDATE settings SET pricing_mode='mrp',discount_cap_bp=1000,whatsapp='' WHERE id=1",
   ).run();
   token = crypto.randomUUID();
-  await bindings.DB.prepare("INSERT INTO sessions VALUES(?,?)")
+  await bindings.DB.prepare(
+    "INSERT INTO sessions(token_hash,expires_at) VALUES(?,?)",
+  )
     .bind(await sha256(token), Date.now() + 60000)
     .run();
 });
@@ -219,9 +227,9 @@ describe("identity and request boundaries", () => {
       ).status,
     ).toBe(401);
     expect(
-      await bindings.DB.prepare("SELECT attempts FROM rate_limits").first(
-        "attempts",
-      ),
+      await bindings.DB.prepare(
+        "SELECT attempts FROM rate_limits WHERE key LIKE 'login:%'",
+      ).first("attempts"),
     ).toBe(1);
   });
 });
@@ -236,6 +244,8 @@ describe("products and catalogue publishing", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].id).toBe(published.id);
     expect(rows[0].availability).toBe("Currently unavailable");
+    // Public visitors see status only, never the exact quantity.
+    expect(rows[0].stock).toBeNull();
     for (const key of ["revision", "lowStock", "last_actor", "published"])
       expect(rows[0]).not.toHaveProperty(key);
   });
@@ -385,7 +395,7 @@ describe("atomic inventory", () => {
     await adjust(p, 10);
     await expect(
       bindings.DB.prepare(
-        "INSERT INTO stock_movements VALUES(?,?,?,1,0,1,1,'stale','owner','2026-10-19')",
+        "INSERT INTO stock_movements(id,fingerprint,product_id,delta,previous_stock,new_stock,expected_revision,reason,actor,created_at) VALUES(?,?,?,1,0,1,1,'stale','owner','2026-10-19')",
       )
         .bind(crypto.randomUUID(), "hash", p.id)
         .run(),
@@ -398,58 +408,38 @@ describe("atomic inventory", () => {
   });
 });
 
-describe("enquiries", () => {
-  it("snapshots current products, remains idempotent and never reserves stock", async () => {
-    const p = await create({ published: true });
-    await adjust(p, 10);
-    const data = {
-      id: crypto.randomUUID(),
-      name: "Test buyer",
-      phone: "+91 99999 99999",
-      notes: "Fixture",
-      items: [{ productId: p.id, quantity: 3 }],
-    };
-    expect((await request("/quotes", data, "POST", false)).status).toBe(201);
-    expect((await request("/quotes", data, "POST", false)).status).toBe(200);
-    expect(
-      await bindings.DB.prepare("SELECT COUNT(*) AS n FROM quotes").first("n"),
-    ).toBe(1);
-    expect(
-      await bindings.DB.prepare("SELECT stock FROM products WHERE id=?")
-        .bind(p.id)
-        .first("stock"),
-    ).toBe(10);
-    const stored = await bindings.DB.prepare(
-      "SELECT items_json FROM quotes",
-    ).first<string>("items_json");
-    expect(JSON.parse(stored!)[0]).toMatchObject({
-      name: body.name,
-      pricePaise: 150000,
-      quantity: 3,
-    });
+describe("website enquiries", () => {
+  const enquiry = () => ({
+    id: crypto.randomUUID(),
+    name: "Test buyer",
+    phone: "+91 99999 99999",
+    message: "Need fittings for two bathrooms",
+    interest: "Showers",
   });
-  it("rejects drafts and changed idempotency payloads", async () => {
-    const p = await create();
-    const data = {
-      id: crypto.randomUUID(),
-      name: "Test buyer",
-      phone: "9999999999",
-      notes: "",
-      items: [{ productId: p.id, quantity: 1 }],
-    };
-    expect((await request("/quotes", data, "POST", false)).status).toBe(409);
-    await request(
-      `/admin/products/${p.id}`,
-      { ...body, published: true, revision: p.revision },
-      "PUT",
-    );
-    expect((await request("/quotes", data, "POST", false)).status).toBe(201);
-    expect(
-      (await request("/quotes", { ...data, notes: "Changed" }, "POST", false))
-        .status,
-    ).toBe(409);
+  it("accepts enquiries even when the catalogue is private, idempotently", async () => {
+    await bindings.DB.prepare(
+      "UPDATE catalogue_access SET mode='accounts' WHERE id=1",
+    ).run();
+    const data = enquiry();
+    expect((await request("/enquiries", data, "POST", false)).status).toBe(201);
+    expect((await request("/enquiries", data, "POST", false)).status).toBe(200);
+    const rows = (await (await request("/admin/quotes")).json()) as {
+      notes: string;
+    }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].notes).toContain("Interested in: Showers");
   });
-  it("keeps customer details private and validates follow-up status", async () => {
+  it("validates phone numbers and keeps enquiries private", async () => {
+    expect(
+      (
+        await request(
+          "/enquiries",
+          { ...enquiry(), phone: "12" },
+          "POST",
+          false,
+        )
+      ).status,
+    ).toBe(400);
     expect(
       (await request("/admin/quotes", undefined, "GET", false)).status,
     ).toBe(401);
@@ -557,44 +547,63 @@ describe("media", () => {
   });
 });
 
-describe("quotation amounts and content", () => {
-  const item = {
-    productId: "11111111-1111-4111-8111-111111111111",
-    code: "L-01",
-    name: "Basin mixer",
-    pricePaise: 125050,
-    quantity: 3,
+describe("quotation text", () => {
+  const quote: Quotation = {
+    id: crypto.randomUUID(),
+    number: "LQ-2026-0007",
+    shareToken: "a".repeat(36),
+    status: "draft",
+    channel: "staff",
+    createdBy: null,
+    createdByName: "Asha",
+    createdByPhone: "919876543210",
+    customerName: "Buyer",
+    customerPhone: "9999999999",
+    customerPlace: "Kuttiady",
+    notes: "Fixture note",
+    validUntil: "2026-11-03",
+    terms: "",
+    items: [
+      {
+        productId: crypto.randomUUID(),
+        code: "L-01",
+        name: "Basin mixer",
+        unit: "pcs",
+        imageUrl: null,
+        mrpPaise: 125050,
+        discountBp: 1000,
+        unitPricePaise: 112545,
+        quantity: 3,
+        amountPaise: 337635,
+      },
+    ],
+    itemCount: 1,
+    mrpTotalPaise: 375150,
+    discountPaise: 37515,
+    totalPaise: 337635,
+    version: 1,
+    revision: 1,
+    createdAt: "2026-10-19T06:00:00.000Z",
+    updatedAt: "2026-10-19T06:00:00.000Z",
   };
-  it("calculates amounts in integer paise and includes all customer details", () => {
-    expect(quotationTotal([item])).toBe(375150);
-    const text = quotationText({
-      reference: "Q-TEST",
-      customer: { name: "Buyer", phone: "919999999999", notes: "Fixture" },
-      items: [item],
-    });
+  it("includes number, customer, lines, discount, total, link and salesperson", () => {
+    const text = quotationText(quote, "https://www.lenoretrading.com/q/x");
     for (const value of [
-      "Q-TEST",
-      "Buyer",
-      "919999999999",
-      "Fixture",
+      "LQ-2026-0007",
+      "Buyer, Kuttiady",
       "L-01",
-      "Basin mixer",
-      "Suggested MRP",
+      "10% off",
       "3,751.50",
+      "3,376.35",
+      "https://www.lenoretrading.com/q/x",
+      "Asha",
+      "Lenore Trading LLP",
     ])
       expect(text).toContain(value);
   });
-  it("does not fabricate a total for unknown MRPs or overflow a safe integer", () => {
-    expect(quotationTotal([{ ...item, pricePaise: null }])).toBeNull();
-    expect(() =>
-      quotationTotal(
-        Array.from({ length: 100 }, () => ({
-          ...item,
-          pricePaise: 10000000000,
-          quantity: 99999,
-        })),
-      ),
-    ).toThrow("too large");
+  it("never fabricates a total for unknown prices", () => {
+    const text = quotationText({ ...quote, totalPaise: null });
+    expect(text).toContain("Total: To be confirmed");
   });
 });
 
@@ -610,6 +619,13 @@ describe("inventory export", () => {
         updatedAt: "2026-10-19",
         imageUrl: null,
         posterUrl: null,
+        slug: "basin-mixer-l-001",
+        hsn: "",
+        gstRateBp: null,
+        barcode: "",
+        reorderQty: 0,
+        bin: "",
+        costPaise: null,
       },
     ]);
     expect(csv).toContain("Suggested MRP (INR)");
@@ -1187,22 +1203,23 @@ describe("catalogue access", () => {
     });
   async function settings() {
     return (await (await request("/admin/catalogue-access")).json()) as {
-      protected: boolean;
+      mode: string;
       hasPassword: boolean;
       revision: number;
     };
   }
   it("is open by default and requires a password before protection", async () => {
-    expect(await (await visitor("/catalogue-access")).json()).toEqual({
-      protected: false,
+    expect(await (await visitor("/catalogue-access")).json()).toMatchObject({
+      mode: "public",
       authorized: true,
+      level: "public",
     });
     const s = await settings();
     expect(
       (
         await request(
           "/admin/catalogue-access",
-          { protected: true, revision: s.revision },
+          { mode: "password", revision: s.revision },
           "PUT",
         )
       ).status,
@@ -1213,7 +1230,7 @@ describe("catalogue access", () => {
     const s = await settings();
     const enabled = await request(
       "/admin/catalogue-access",
-      { protected: true, password: "dealer-pass-1", revision: s.revision },
+      { mode: "password", password: "dealer-pass-1", revision: s.revision },
       "PUT",
     );
     expect(enabled.status).toBe(200);
@@ -1252,17 +1269,589 @@ describe("catalogue access", () => {
     const s = await settings();
     await request(
       "/admin/catalogue-access",
-      { protected: false, password: "first-pass", revision: s.revision },
+      { mode: "public", password: "first-pass", revision: s.revision },
       "PUT",
     );
     expect(
       (
         await request(
           "/admin/catalogue-access",
-          { protected: false, revision: s.revision },
+          { mode: "public", revision: s.revision },
           "PUT",
         )
       ).status,
     ).toBe(409);
+  });
+});
+
+async function member(
+  overrides: Partial<{
+    name: string;
+    phone: string;
+    role: "admin" | "sales";
+    maxDiscountBp: number | null;
+  }> = {},
+) {
+  const phone =
+    overrides.phone ??
+    `98${Math.floor(Math.random() * 1e8)
+      .toString()
+      .padStart(8, "0")}`;
+  const created = await request(
+    "/admin/team",
+    {
+      name: "Asha Sales",
+      role: "sales",
+      maxDiscountBp: null,
+      password: "sales-pass-1",
+      ...overrides,
+      phone,
+    },
+    "POST",
+  );
+  expect(created.status).toBe(201);
+  const login = await request(
+    "/session",
+    { username: phone, password: "sales-pass-1" },
+    "POST",
+    false,
+  );
+  expect(login.status).toBe(200);
+  const cookie = /lenore_session=[^;]+/.exec(
+    login.headers.get("set-cookie")!,
+  )![0];
+  return { ...((await created.json()) as TeamMember), cookie };
+}
+const as =
+  (cookie: string) =>
+  (path: string, data?: unknown, method = "GET") =>
+    SELF.fetch(`${base}/api${path}`, {
+      method,
+      headers: {
+        Origin: base,
+        Cookie: cookie,
+        ...(data === undefined ? {} : { "Content-Type": "application/json" }),
+      },
+      body: data === undefined ? undefined : JSON.stringify(data),
+    });
+const later = (days = 10) =>
+  new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
+function quoteBody(
+  items: {
+    productId: string;
+    quantity: number;
+    discountBp?: number;
+    unitPricePaise?: number | null;
+  }[],
+) {
+  return {
+    id: crypto.randomUUID(),
+    customerName: "Rahim",
+    customerPhone: "9847000000",
+    customerPlace: "Kuttiady",
+    notes: "",
+    validUntil: later(),
+    items,
+  };
+}
+
+describe("team accounts and roles", () => {
+  it("lets salespeople into the catalogue with exact stock but not the workspace", async () => {
+    const p = await create({ published: true });
+    await adjust(p, 7);
+    const sales = await member();
+    const call = as(sales.cookie);
+    expect((await call("/admin/products")).status).toBe(403);
+    const session = (await (await call("/session")).json()) as {
+      role: string;
+      authenticated: boolean;
+    };
+    expect(session).toMatchObject({ role: "sales", authenticated: false });
+    const rows = (await (
+      await call("/catalogue")
+    ).json()) as CatalogueProduct[];
+    expect(rows[0].stock).toBe(7);
+  });
+  it("admits salespeople in accounts-only mode and locks everyone else out", async () => {
+    await create({ published: true });
+    await bindings.DB.prepare(
+      "UPDATE catalogue_access SET mode='accounts' WHERE id=1",
+    ).run();
+    expect((await request("/catalogue", undefined, "GET", false)).status).toBe(
+      401,
+    );
+    const sales = await member();
+    expect((await as(sales.cookie)("/catalogue")).status).toBe(200);
+  });
+  it("ends sessions immediately when a member is deactivated", async () => {
+    const sales = await member();
+    const update = await request(
+      `/admin/team/${sales.id}`,
+      {
+        name: sales.name,
+        role: "sales",
+        active: false,
+        maxDiscountBp: null,
+        password: "",
+        revision: sales.revision,
+      },
+      "PUT",
+    );
+    expect(update.status).toBe(200);
+    const session = (await (await as(sales.cookie)("/session")).json()) as {
+      role: string | null;
+    };
+    expect(session.role).toBeNull();
+    expect(
+      (
+        await request(
+          "/session",
+          { username: sales.phone, password: "sales-pass-1" },
+          "POST",
+          false,
+        )
+      ).status,
+    ).toBe(401);
+  });
+  it("rejects duplicate phone numbers and stale edits", async () => {
+    const sales = await member({ phone: "9800000001" });
+    expect(
+      (
+        await request(
+          "/admin/team",
+          {
+            name: "Copy",
+            phone: "98000 00001",
+            role: "sales",
+            maxDiscountBp: null,
+            password: "another-pass",
+          },
+          "POST",
+        )
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await request(
+          `/admin/team/${sales.id}`,
+          {
+            name: "x y",
+            role: "sales",
+            active: true,
+            maxDiscountBp: null,
+            password: "",
+            revision: 99,
+          },
+          "PUT",
+        )
+      ).status,
+    ).toBe(409);
+  });
+  it("throttles failed logins per account, so one person cannot lock out a shared showroom connection", async () => {
+    const other = await member({ phone: "9800000002" });
+    for (let i = 0; i < 10; i++)
+      await request(
+        "/session",
+        { username: "9800000003", password: "wrong" },
+        "POST",
+        false,
+      );
+    expect(
+      (
+        await request(
+          "/session",
+          { username: "9800000003", password: "wrong" },
+          "POST",
+          false,
+        )
+      ).status,
+    ).toBe(429);
+    expect(
+      (
+        await request(
+          "/session",
+          { username: other.phone, password: "sales-pass-1" },
+          "POST",
+          false,
+        )
+      ).status,
+    ).toBe(200);
+  });
+});
+
+describe("quotations", () => {
+  it("numbers quotations, prices them at MRP by default and is retry-safe", async () => {
+    const p = await create({ published: true, pricePaise: 125050 });
+    const sales = await member();
+    const body = quoteBody([{ productId: p.id, quantity: 3 }]);
+    const first = await as(sales.cookie)("/quotations", body, "POST");
+    expect(first.status).toBe(201);
+    const q = (await first.json()) as Quotation;
+    expect(q.number).toMatch(/^LQ-\d{4}-\d{4}$/);
+    expect(q.totalPaise).toBe(375150);
+    expect(q.createdByName).toBe("Asha Sales");
+    expect(q.terms).toContain("does not reserve stock");
+    const replay = await as(sales.cookie)("/quotations", body, "POST");
+    expect(replay.status).toBe(200);
+    expect(((await replay.json()) as Quotation).number).toBe(q.number);
+    const next = (await (
+      await as(sales.cookie)(
+        "/quotations",
+        quoteBody([{ productId: p.id, quantity: 1 }]),
+        "POST",
+      )
+    ).json()) as Quotation;
+    expect(Number(next.number.slice(-4))).toBe(Number(q.number.slice(-4)) + 1);
+    expect(
+      await bindings.DB.prepare("SELECT stock FROM products WHERE id=?")
+        .bind(p.id)
+        .first("stock"),
+    ).toBe(0);
+  });
+  it("enforces the admin pricing policy and never exceeds MRP", async () => {
+    const p = await create({ published: true, pricePaise: 100000 });
+    const sales = await member({ maxDiscountBp: null });
+    const call = as(sales.cookie);
+    expect(
+      (
+        await call(
+          "/quotations",
+          quoteBody([{ productId: p.id, quantity: 1, discountBp: 500 }]),
+          "POST",
+        )
+      ).status,
+    ).toBe(409);
+    await bindings.DB.prepare(
+      "UPDATE settings SET pricing_mode='capped',discount_cap_bp=1000",
+    ).run();
+    const ok = await call(
+      "/quotations",
+      quoteBody([{ productId: p.id, quantity: 2, discountBp: 750 }]),
+      "POST",
+    );
+    expect(ok.status).toBe(201);
+    const q = (await ok.json()) as Quotation;
+    expect(q.items[0].unitPricePaise).toBe(92500);
+    expect(q.discountPaise).toBe(15000);
+    expect(
+      (
+        await call(
+          "/quotations",
+          quoteBody([{ productId: p.id, quantity: 1, discountBp: 1500 }]),
+          "POST",
+        )
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await call(
+          "/quotations",
+          quoteBody([{ productId: p.id, quantity: 1, unitPricePaise: 90000 }]),
+          "POST",
+        )
+      ).status,
+    ).toBe(409);
+    const capped = await member({ maxDiscountBp: 2000 });
+    expect(
+      (
+        await as(capped.cookie)(
+          "/quotations",
+          quoteBody([{ productId: p.id, quantity: 1, discountBp: 1500 }]),
+          "POST",
+        )
+      ).status,
+    ).toBe(201);
+    await bindings.DB.prepare("UPDATE settings SET pricing_mode='free'").run();
+    expect(
+      (
+        await call(
+          "/quotations",
+          quoteBody([{ productId: p.id, quantity: 1, unitPricePaise: 85000 }]),
+          "POST",
+        )
+      ).status,
+    ).toBe(201);
+    expect(
+      (
+        await call(
+          "/quotations",
+          quoteBody([{ productId: p.id, quantity: 1, unitPricePaise: 100001 }]),
+          "POST",
+        )
+      ).status,
+    ).toBe(409);
+  });
+  it("keeps public quotations at MRP and refuses them when the catalogue is private", async () => {
+    const p = await create({ published: true, pricePaise: 50000 });
+    expect(
+      (
+        await request(
+          "/quotations",
+          quoteBody([{ productId: p.id, quantity: 1, discountBp: 100 }]),
+          "POST",
+          false,
+        )
+      ).status,
+    ).toBe(409);
+    const ok = await request(
+      "/quotations",
+      quoteBody([{ productId: p.id, quantity: 2 }]),
+      "POST",
+      false,
+    );
+    expect(ok.status).toBe(201);
+    expect(((await ok.json()) as Quotation).channel).toBe("public");
+    await bindings.DB.prepare(
+      "UPDATE catalogue_access SET mode='accounts' WHERE id=1",
+    ).run();
+    expect(
+      (
+        await request(
+          "/quotations",
+          quoteBody([{ productId: p.id, quantity: 1 }]),
+          "POST",
+          false,
+        )
+      ).status,
+    ).toBe(401);
+  });
+  it("revises with immutable versions, guards authorship and serves the customer link", async () => {
+    const p = await create({ published: true, pricePaise: 20000 });
+    const author = await member();
+    const other = await member();
+    const q = (await (
+      await as(author.cookie)(
+        "/quotations",
+        quoteBody([{ productId: p.id, quantity: 1 }]),
+        "POST",
+      )
+    ).json()) as Quotation;
+    const revision = {
+      ...quoteBody([{ productId: p.id, quantity: 4 }]),
+      revision: q.revision,
+    };
+    expect(
+      (await as(other.cookie)(`/quotations/${q.id}`, revision, "PUT")).status,
+    ).toBe(403);
+    const revised = await as(author.cookie)(
+      `/quotations/${q.id}`,
+      revision,
+      "PUT",
+    );
+    expect(revised.status).toBe(200);
+    expect(((await revised.json()) as Quotation).totalPaise).toBe(80000);
+    expect(
+      (await as(author.cookie)(`/quotations/${q.id}`, revision, "PUT")).status,
+    ).toBe(409);
+    const detail = (await (
+      await as(author.cookie)(`/quotations/${q.id}`)
+    ).json()) as Quotation & { versions: unknown[] };
+    expect(detail.version).toBe(2);
+    expect(detail.versions).toHaveLength(2);
+    await expect(
+      bindings.DB.prepare("DELETE FROM quotation_versions WHERE quotation_id=?")
+        .bind(q.id)
+        .run(),
+    ).rejects.toThrow("cannot be deleted");
+    const status = await as(author.cookie)(
+      `/quotations/${q.id}`,
+      { status: "won", revision: detail.revision },
+      "PATCH",
+    );
+    expect(status.status).toBe(200);
+    const link = await request(`/q/${q.shareToken}`, undefined, "GET", false);
+    expect(link.status).toBe(200);
+    const shared = (await link.json()) as Quotation;
+    expect(shared.items[0].quantity).toBe(4);
+    expect(shared.createdBy).toBeNull();
+    expect(
+      (await request(`/q/${"0".repeat(36)}`, undefined, "GET", false)).status,
+    ).toBe(404);
+    const mine = (await (
+      await as(other.cookie)("/quotations")
+    ).json()) as Quotation[];
+    expect(mine.find((x) => x.id === q.id)).toBeUndefined();
+    const all = (await (
+      await request(`/admin/quotations?by=${author.id}`)
+    ).json()) as Quotation[];
+    expect(all.map((x) => x.id)).toContain(q.id);
+  });
+  it("reports quotation insights for admins only", async () => {
+    const p = await create({ published: true, pricePaise: 10000 });
+    const sales = await member();
+    await as(sales.cookie)(
+      "/quotations",
+      quoteBody([{ productId: p.id, quantity: 5 }]),
+      "POST",
+    );
+    expect((await as(sales.cookie)("/admin/analytics")).status).toBe(403);
+    const r = await request("/admin/analytics?days=7");
+    expect(r.status).toBe(200);
+    const data = (await r.json()) as {
+      byPerson: { id: string; quotes: number }[];
+      topQuoted: { productId: string; quantity: number }[];
+    };
+    expect(data.byPerson.find((x) => x.id === sales.id)?.quotes).toBe(1);
+    expect(data.topQuoted.find((x) => x.productId === p.id)?.quantity).toBe(5);
+  });
+});
+
+describe("inventory management", () => {
+  it("records typed movements, rejects the wrong direction and keeps a ledger", async () => {
+    const p = await create();
+    const move = (delta: number, kind: string, revision: number) =>
+      request(
+        `/admin/products/${p.id}/stock`,
+        {
+          operationId: crypto.randomUUID(),
+          revision,
+          delta,
+          reason: "Typed movement",
+          kind,
+        },
+        "POST",
+      );
+    expect((await move(-2, "receipt", 1)).status).toBe(400);
+    expect((await move(10, "receipt", 1)).status).toBe(200);
+    expect((await move(-1, "damage", 2)).status).toBe(200);
+    const ledger = (await (
+      await request(`/admin/products/${p.id}/movements`)
+    ).json()) as {
+      kind: string;
+      newStock: number;
+    }[];
+    expect(ledger.map((m) => m.kind)).toEqual(["damage", "receipt"]);
+    expect(ledger[0].newStock).toBe(9);
+  });
+  it("posts a stock count atomically, rejects stale counts and replays safely", async () => {
+    const a = await create({ code: "C-1" });
+    const b = await create({ code: "C-2" });
+    await adjust(a, 5);
+    const count = {
+      operationId: crypto.randomUUID(),
+      reason: "Monthly count",
+      lines: [
+        { productId: a.id, revision: 2, counted: 3 },
+        { productId: b.id, revision: 1, counted: 4 },
+      ],
+    };
+    const r = await request("/admin/stock-count", count, "POST");
+    expect(r.status).toBe(200);
+    expect(((await r.json()) as { corrected: number }).corrected).toBe(2);
+    expect(
+      (
+        (await (await request("/admin/stock-count", count, "POST")).json()) as {
+          replay: boolean;
+        }
+      ).replay,
+    ).toBe(true);
+    const stale = { ...count, operationId: crypto.randomUUID() };
+    expect((await request("/admin/stock-count", stale, "POST")).status).toBe(
+      409,
+    );
+    const stocks = await bindings.DB.prepare(
+      "SELECT code,stock FROM products ORDER BY code",
+    ).all();
+    expect(stocks.results).toEqual([
+      { code: "C-1", stock: 3 },
+      { code: "C-2", stock: 4 },
+    ]);
+  });
+  it("imports products by code with a dry run, opening stock and unique barcodes", async () => {
+    await create({ code: "IMP-1" });
+    const rows = [
+      { ...body, code: "IMP-1", name: "Renamed", barcode: "8900000000011" },
+      { ...body, code: "IMP-2", name: "New product", openingStock: 6 },
+    ];
+    const dry = (await (
+      await request("/admin/products/import", { rows, dryRun: true }, "POST")
+    ).json()) as Record<string, number>;
+    expect(dry).toMatchObject({ created: 1, updated: 1, unchanged: 0 });
+    expect(
+      await bindings.DB.prepare("SELECT COUNT(*) AS n FROM products").first(
+        "n",
+      ),
+    ).toBe(1);
+    expect(
+      (await request("/admin/products/import", { rows, dryRun: false }, "POST"))
+        .status,
+    ).toBe(200);
+    expect(
+      await bindings.DB.prepare(
+        "SELECT stock FROM products WHERE code='IMP-2'",
+      ).first("stock"),
+    ).toBe(6);
+    const again = (await (
+      await request("/admin/products/import", { rows, dryRun: true }, "POST")
+    ).json()) as Record<string, number>;
+    expect(again.unchanged).toBe(2);
+    expect(
+      (
+        await request(
+          "/admin/products",
+          { ...body, code: "IMP-3", barcode: "8900000000011" },
+          "POST",
+        )
+      ).status,
+    ).toBe(409);
+  });
+});
+
+describe("search engine rendering", () => {
+  const page = (path: string) => SELF.fetch(`${base}${path}`);
+  it("renders the home page with metadata, structured business data and content", async () => {
+    await create({
+      published: true,
+      category: "Showers",
+      code: "S-1",
+      name: "Rain shower",
+    });
+    const r = await page("/");
+    expect(r.status).toBe(200);
+    const html = await r.text();
+    expect(html).toContain(
+      "<title>Lenore — Bath Fittings &amp; Sanitary Ware in Kuttiady, Kozhikode</title>",
+    );
+    expect(html).toContain('<link rel="canonical" href="https://lenore.test/"');
+    expect(html).toContain('"taxID":"32AANFL0054E1ZR"');
+    expect(html).toContain('"addressLocality":"Kuttiady"');
+    expect(html).toContain("Refined bathroom living");
+    expect(html).toContain('id="page-data"');
+    expect(r.headers.get("content-security-policy")).toContain(
+      "frame-ancestors 'none'",
+    );
+  });
+  it("lists public products in the sitemap and hides them when the catalogue is private", async () => {
+    const p = await create({
+      published: true,
+      name: "Rain shower",
+      code: "S-1",
+    });
+    let xml = await (await page("/sitemap.xml")).text();
+    expect(xml).toContain(`/products/${p.slug}`);
+    expect(xml).toContain("/collections/basin-mixers");
+    const product = await page(`/products/${p.slug}`);
+    expect(product.status).toBe(200);
+    const html = await product.text();
+    expect(html).toContain('"@type":"Product"');
+    expect(html).toContain('"price":"1500.00"');
+    await bindings.DB.prepare(
+      "UPDATE catalogue_access SET mode='accounts' WHERE id=1",
+    ).run();
+    xml = await (await page("/sitemap.xml")).text();
+    expect(xml).not.toContain("/products/");
+    expect((await page(`/products/${p.slug}`)).status).toBe(404);
+  });
+  it("keeps private surfaces out of search and returns real 404s", async () => {
+    const robots = await (await page("/robots.txt")).text();
+    expect(robots).toContain("Disallow: /manage");
+    expect(robots).toContain("Sitemap: https://lenore.test/sitemap.xml");
+    const shell = await page("/catalogue/quote");
+    expect(shell.status).toBe(200);
+    expect(shell.headers.get("x-robots-tag")).toContain("noindex");
+    expect(await shell.text()).toContain('rel="manifest"');
+    const missing = await page("/no-such-page");
+    expect(missing.status).toBe(404);
+    expect(await missing.text()).toContain("noindex");
   });
 });

@@ -1,0 +1,239 @@
+/* Additions to the staff workspace: insights, team, quotations and inventory tools. */
+.workspace .admin-stack {
+  display: grid;
+  gap: 20px;
+}
+.workspace .admin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px;
+}
+.workspace .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.workspace .block {
+  display: block;
+}
+.workspace .data-table.compact td,
+.workspace .data-table.compact th {
+  padding: 9px 12px;
+}
+.workspace .data-table tr.inactive td {
+  color: var(--muted);
+}
+.workspace .tool-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.workspace .stat-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+.workspace .stat-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.workspace .stat-list dt {
+  color: var(--muted);
+}
+.workspace .stat-list dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.daily-chart {
+  margin: 0;
+}
+.daily-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.daily-chart .axis {
+  stroke: #cdd5df;
+  stroke-width: 1;
+}
+.daily-chart .bar {
+  fill: #315f85;
+}
+.daily-chart .hit {
+  fill: transparent;
+}
+.daily-chart .bar-hit:hover .bar {
+  fill: #254563;
+}
+.daily-chart .bar-hit:hover .hit {
+  fill: rgb(49 95 133 / 0.06);
+}
+.daily-chart .tick {
+  fill: #506071;
+  font-size: 11px;
+}
+.choice-list {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 8px;
+  padding: 0;
+  border: 0;
+}
+.field-group {
+  display: grid;
+  gap: 14px;
+  margin: 4px 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+.field-group legend {
+  padding: 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.ledger {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.ledger-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.ledger h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.ledger ol {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+.ledger li {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 10px;
+}
+.delta {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.delta.up {
+  color: #406134;
+}
+.delta.down {
+  color: #953d31;
+}
+.editor-panel.wide-panel {
+  width: min(960px, 100vw);
+}
+.count-table {
+  max-height: 46vh;
+  overflow: auto;
+}
+.count-input {
+  width: 90px;
+  min-height: 36px !important;
+  text-align: right;
+}
+.upload-results {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+.upload-results .ok {
+  color: #406134;
+}
+.upload-results .fail {
+  color: #953d31;
+}
+.label-print {
+  position: fixed;
+  inset: 0;
+  overflow: auto;
+  padding: 20px;
+  background: #fff;
+  color: #111;
+  font-family: "Manrope", sans-serif;
+}
+.label-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.label-toolbar label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+}
+.label-toolbar input {
+  width: 80px;
+}
+.label-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 63.5mm);
+  gap: 2mm 2.5mm;
+}
+.label {
+  display: grid;
+  align-content: center;
+  gap: 1mm;
+  height: 38.1mm;
+  padding: 2mm 3mm;
+  border: 1px dashed #ccc;
+  overflow: hidden;
+  font-size: 8pt;
+  line-height: 1.2;
+}
+.label strong {
+  font-size: 8.5pt;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.label b {
+  font-size: 11pt;
+}
+.barcode {
+  width: 100%;
+  height: 12mm;
+}
+.barcode rect {
+  fill: #000;
+}
+@media print {
+  body:has(.label-print) .workspace {
+    display: none;
+  }
+  .label-print {
+    position: static;
+    padding: 0;
+  }
+  .label-print .no-print {
+    display: none;
+  }
+  .label {
+    border-color: transparent;
+    break-inside: avoid;
+  }
+  @page {
+    size: A4;
+    margin: 10mm 7mm;
+  }
+}

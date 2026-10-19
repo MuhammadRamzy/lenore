@@ -1,5 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
+  // Default environment is local development and tests only.
+  // Production lives under env.production; see docs/DEPLOYMENT.md.
   "name": "lenore-platform-local",
   "main": "src/server/index.ts",
   "compatibility_date": "2026-10-19",
@@ -9,8 +11,9 @@
   "assets": {
     "directory": "dist/client",
     "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"],
+    // Unknown paths reach the Worker, which renders website pages, app shells and real 404s.
+    "not_found_handling": "none",
+    "run_worker_first": ["/", "/index.html", "/api/*"],
   },
   "d1_databases": [
     {
@@ -22,4 +25,33 @@
   ],
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "lenore-local-media" }],
   "vars": { "DEMO_MODE": "false" },
+  "env": {
+    "production": {
+      "name": "lenore-platform",
+      "workers_dev": false,
+      "preview_urls": false,
+      "routes": [
+        { "pattern": "www.lenoretrading.com", "custom_domain": true },
+        { "pattern": "lenoretrading.com", "custom_domain": true },
+      ],
+      "placement": { "mode": "smart" },
+      "observability": { "enabled": true, "head_sampling_rate": 1 },
+      "vars": {
+        "DEMO_MODE": "false",
+        "SITE_ORIGIN": "https://www.lenoretrading.com",
+      },
+      // Replace with the ID printed by `wrangler d1 create lenore-production`.
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "lenore-production",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "migrations",
+        },
+      ],
+      "r2_buckets": [
+        { "binding": "MEDIA", "bucket_name": "lenore-production-media" },
+      ],
+    },
+  },
 }

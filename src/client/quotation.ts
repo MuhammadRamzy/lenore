@@ -1,55 +1,59 @@
 import "regenerator-runtime/runtime";
-import { money, type QuoteItem } from "../shared";
+import { money, percent, type Quotation } from "../shared";
+import { business, addressLine } from "../business";
 
-export type CustomerDraft = { name: string; phone: string; notes: string };
-export type Quotation = {
-  reference: string;
-  customer: CustomerDraft;
-  items: QuoteItem[];
-};
-export function quotationTotal(items: QuoteItem[]): number | null {
-  if (items.some((i) => i.pricePaise === null)) return null;
-  const total = items.reduce(
-    (n, i) => n + BigInt(i.pricePaise!) * BigInt(i.quantity),
-    0n,
-  );
-  if (total > BigInt(Number.MAX_SAFE_INTEGER))
-    throw new Error(
-      "This quotation is too large. Split it into smaller quotations.",
-    );
-  return Number(total);
-}
-export function quotationText(q: Quotation) {
+const date = (iso: string) =>
+  new Date(
+    iso.length === 10 ? `${iso}T00:00:00+05:30` : iso,
+  ).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Kolkata",
+  });
+
+/** Plain-text quotation for WhatsApp and copying. */
+export function quotationText(q: Quotation, link = "") {
+  const lines = q.items.map((l, i) => {
+    const price =
+      l.discountBp > 0
+        ? `${money(l.unitPricePaise)} (MRP ${money(l.mrpPaise)}, ${percent(l.discountBp)} off)`
+        : money(l.unitPricePaise ?? l.mrpPaise);
+    return `${i + 1}. ${l.name} (${l.code})\n   ${l.quantity} ${l.unit} × ${price} = ${l.amountPaise === null ? "To be confirmed" : money(l.amountPaise)}`;
+  });
   return [
-    `LENORE · Quotation enquiry ${q.reference}`,
-    `Customer: ${q.customer.name.trim() || "Not specified"}`,
-    ...(q.customer.phone.trim() ? [`Phone: ${q.customer.phone.trim()}`] : []),
-    ...(q.customer.notes.trim() ? [`Notes: ${q.customer.notes.trim()}`] : []),
+    `*LENORE · Quotation ${q.number}*`,
+    `For: ${q.customerName}${q.customerPlace ? `, ${q.customerPlace}` : ""}`,
+    `Date: ${date(q.createdAt)} · Valid until ${date(q.validUntil)}`,
     "",
-    ...q.items.map(
-      (i) =>
-        `${i.code} · ${i.name}\nQuantity: ${i.quantity} · Suggested MRP: ${money(i.pricePaise)} · Amount: ${i.pricePaise === null ? "To be confirmed" : money(i.pricePaise * i.quantity)}`,
-    ),
+    ...lines,
     "",
-    `Products: ${q.items.length} · Total quantity: ${q.items.reduce((n, i) => n + i.quantity, 0)}`,
-    `MRP total: ${money(quotationTotal(q.items))}`,
-    "Suggested MRP only. Prices and availability require confirmation. This enquiry does not reserve stock.",
+    ...(q.discountPaise
+      ? [
+          `MRP total: ${money(q.mrpTotalPaise)}`,
+          `Discount: − ${money(q.discountPaise)}`,
+        ]
+      : []),
+    `*Total: ${q.totalPaise === null ? "To be confirmed" : money(q.totalPaise)}*`,
+    ...(q.notes ? ["", `Notes: ${q.notes}`] : []),
+    ...(link ? ["", `View or download: ${link}`] : []),
+    "",
+    `${q.createdByName}${q.createdByPhone ? ` · +${q.createdByPhone}` : ""}`,
+    `${business.legalName} · ${business.phoneDisplay}`,
   ].join("\n");
 }
 
-/** A real browser-generated PDF; customer details stay on-device until an enquiry is submitted. */
-export async function downloadQuotation(q: Quotation) {
-  if (!q.items.length) throw new Error("Add a product before downloading.");
-  const total = quotationTotal(q.items);
+/** Browser-generated A4 PDF with English and Malayalam font coverage. */
+export async function quotationPdf(q: Quotation): Promise<File> {
   const [{ PDFDocument, rgb }, fontkitModule] = await Promise.all([
     import("pdf-lib"),
     import("@pdf-lib/fontkit"),
   ]);
-  const [sansBytes, malBytes, logoBytes] = await Promise.all(
+  const [sansBytes, malBytes, markBytes] = await Promise.all(
     [
       "/fonts/quotation-sans.ttf",
       "/fonts/quotation-malayalam.ttf",
-      "/images/lenore-mark.png",
+      "/icons/mark-bronze-64.png",
     ].map(async (path) => {
       const response = await fetch(path);
       if (!response.ok)
@@ -59,26 +63,28 @@ export async function downloadQuotation(q: Quotation) {
   );
   const pdf = await PDFDocument.create();
   pdf.registerFontkit(fontkitModule.default);
-  pdf.setTitle(`Lenore quotation ${q.reference}`);
-  pdf.setAuthor("Lenore");
+  pdf.setTitle(`Lenore quotation ${q.number}`);
+  pdf.setAuthor(business.legalName);
   const sans = await pdf.embedFont(sansBytes, { subset: true });
   const mal = await pdf.embedFont(malBytes, { subset: true });
-  const mark = await pdf.embedPng(logoBytes);
-  const ink = rgb(0.157, 0.149, 0.125),
-    muted = rgb(0.416, 0.396, 0.361),
-    bronze = rgb(0.471, 0.357, 0.231);
+  const mark = await pdf.embedPng(markBytes);
+  const ink = rgb(0.08, 0.08, 0.08),
+    muted = rgb(0.42, 0.42, 0.42),
+    accent = rgb(0.54, 0.35, 0.17),
+    rule = rgb(0.88, 0.87, 0.85);
   const fonts = [sans, mal];
   const supported = fonts.map((f) => new Set(f.getCharacterSet()));
   const segments = new Intl.Segmenter("en", { granularity: "grapheme" });
+  type Font = typeof sans;
   function runs(text: string) {
-    const result: { text: string; font: typeof sans }[] = [];
-    for (const { segment } of segments.segment(text)) {
+    const result: { text: string; font: Font }[] = [];
+    for (const { segment } of segments.segment(text.replace(/\p{Cc}/gu, " "))) {
       const index = supported.findIndex((chars) =>
         [...segment].every((c) => chars.has(c.codePointAt(0)!)),
       );
       if (index < 0)
         throw new Error(
-          "A character in this quotation cannot be rendered. Use English or Malayalam text.",
+          "A character in this quotation cannot be printed. Use English or Malayalam text.",
         );
       const font = fonts[index],
         last = result.at(-1);
@@ -89,15 +95,19 @@ export async function downloadQuotation(q: Quotation) {
   }
   const width = (text: string, size: number) =>
     runs(text).reduce((n, r) => n + r.font.widthOfTextAtSize(r.text, size), 0);
+  const W = 595.28,
+    H = 841.89,
+    L = 44,
+    R = W - 44;
   const pages: ReturnType<typeof pdf.addPage>[] = [];
-  let page = pdf.addPage([595.28, 841.89]);
+  let page = pdf.addPage([W, H]);
   pages.push(page);
   let y = 0;
   function draw(
     text: string,
     x: number,
     baseline: number,
-    size = 10,
+    size = 9.5,
     color = ink,
   ) {
     for (const run of runs(text)) {
@@ -105,92 +115,171 @@ export async function downloadQuotation(q: Quotation) {
       x += run.font.widthOfTextAtSize(run.text, size);
     }
   }
-  function header() {
-    page.drawImage(mark, { x: 44, y: 772, width: 18, height: 27 });
-    draw("LENORE", 76, 783, 20);
-    draw("BATH FITTINGS & SANITARY WARE", 76, 770, 6.5, muted);
-    draw(`QUOTATION ENQUIRY · ${q.reference}`, 44, 748, 10, bronze);
-    page.drawLine({
-      start: { x: 44, y: 730 },
-      end: { x: 551, y: 730 },
-      thickness: 1,
-      color: rgb(0.82, 0.78, 0.72),
-    });
-    y = 705;
+  const drawRight = (
+    text: string,
+    x: number,
+    baseline: number,
+    size = 9.5,
+    color = ink,
+  ) => draw(text, x - width(text, size), baseline, size, color);
+  function wrap(text: string, max: number, size: number) {
+    const out: string[] = [];
+    for (const source of text.split("\n")) {
+      let line = "";
+      for (const word of source.split(/(\s+)/)) {
+        if (line && width(line + word, size) > max) {
+          out.push(line.trimEnd());
+          line = word.trimStart();
+        } else line += word;
+      }
+      out.push(line);
+    }
+    return out;
   }
-  function ensure(space: number) {
-    if (y - space < 75) {
-      page = pdf.addPage([595.28, 841.89]);
+  const line = (at: number, thickness = 0.6) =>
+    page.drawLine({
+      start: { x: L, y: at },
+      end: { x: R, y: at },
+      thickness,
+      color: rule,
+    });
+  function header() {
+    page.drawImage(mark, { x: L, y: H - 86, width: 26, height: 33 });
+    draw("LENORE", L + 36, H - 66, 18);
+    draw(business.tagline.toUpperCase(), L + 37, H - 80, 6.5, accent);
+    drawRight("QUOTATION", R, H - 62, 13, accent);
+    drawRight(q.number, R, H - 78, 9.5);
+    line(H - 100, 1);
+    y = H - 122;
+  }
+  const cols = { qty: 330, mrp: 400, disc: 455, amount: R };
+  function tableHead() {
+    draw("PRODUCT", L, y, 7.5, muted);
+    drawRight("QTY", cols.qty, y, 7.5, muted);
+    drawRight("MRP", cols.mrp, y, 7.5, muted);
+    drawRight("DISC.", cols.disc, y, 7.5, muted);
+    drawRight("AMOUNT", cols.amount, y, 7.5, muted);
+    y -= 8;
+    line(y);
+    y -= 16;
+  }
+  function ensure(space: number, withTable = false) {
+    if (y - space < 70) {
+      page = pdf.addPage([W, H]);
       pages.push(page);
       header();
+      if (withTable) tableHead();
     }
-  }
-  function paragraph(value: string, size = 10) {
-    for (const source of value
-      .replace(/\p{Cc}/gu, (character) => (character === "\n" ? "\n" : " "))
-      .split("\n")) {
-      let line = "";
-      for (const { segment } of segments.segment(source)) {
-        if (line && width(line + segment, size) > 500) {
-          ensure(size + 7);
-          draw(line, 44, y, size);
-          y -= size + 7;
-          line = segment;
-        } else line += segment;
-      }
-      ensure(size + 7);
-      draw(line, 44, y, size);
-      y -= size + 7;
-    }
-    y -= 5;
   }
   header();
-  paragraph(
-    `Date: ${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })}`,
+  // Parties and dates
+  const meta: [string, string][] = [
+    ["Date", date(q.createdAt)],
+    ["Valid until", date(q.validUntil)],
+    ...(q.version > 1
+      ? ([["Revision", String(q.version)]] as [string, string][])
+      : []),
+  ];
+  draw("PREPARED FOR", L, y, 7, muted);
+  draw("PREPARED BY", 240, y, 7, muted);
+  y -= 14;
+  const forLines = [q.customerName, q.customerPlace, q.customerPhone].filter(
+    Boolean,
   );
-  paragraph(`Customer: ${q.customer.name.trim() || "Not specified"}`);
-  if (q.customer.phone) paragraph(`Phone: ${q.customer.phone}`);
-  if (q.customer.notes) paragraph(`Notes: ${q.customer.notes}`);
-  y -= 12;
-  for (const [index, item] of q.items.entries()) {
-    ensure(85);
-    paragraph(`${index + 1}. ${item.code} — ${item.name}`, 11);
-    paragraph(
-      `Quantity: ${item.quantity}    Suggested MRP: ${money(item.pricePaise)}`,
-    );
-    paragraph(
-      `Amount: ${item.pricePaise === null ? "To be confirmed" : money(item.pricePaise * item.quantity)}`,
-    );
-    page.drawLine({
-      start: { x: 44, y },
-      end: { x: 551, y },
-      thickness: 0.5,
-      color: rgb(0.86, 0.84, 0.8),
-    });
-    y -= 20;
+  const byLines = [
+    q.createdByName,
+    q.createdByPhone ? `+${q.createdByPhone}` : business.phoneDisplay,
+  ];
+  for (
+    let i = 0;
+    i < Math.max(forLines.length, byLines.length, meta.length);
+    i++
+  ) {
+    if (forLines[i])
+      draw(forLines[i], L, y, i === 0 ? 10.5 : 9, i === 0 ? ink : muted);
+    if (byLines[i])
+      draw(byLines[i], 240, y, i === 0 ? 10.5 : 9, i === 0 ? ink : muted);
+    if (meta[i]) {
+      draw(meta[i][0], 420, y, 8.5, muted);
+      drawRight(meta[i][1], R, y, 9);
+    }
+    y -= 14;
   }
-  ensure(100);
-  paragraph(
-    `Products: ${q.items.length} · Total quantity: ${q.items.reduce((n, i) => n + i.quantity, 0)}`,
+  y -= 14;
+  tableHead();
+  q.items.forEach((l, i) => {
+    const nameLines = wrap(`${i + 1}. ${l.name}`, 270, 9.5);
+    ensure(nameLines.length * 13 + 22, true);
+    nameLines.forEach((t, j) => draw(t, L, y - j * 13, 9.5));
+    drawRight(`${l.quantity} ${l.unit}`, cols.qty, y);
+    drawRight(money(l.mrpPaise), cols.mrp, y);
+    drawRight(
+      l.discountBp ? percent(l.discountBp) : "—",
+      cols.disc,
+      y,
+      9.5,
+      l.discountBp ? accent : muted,
+    );
+    drawRight(
+      l.amountPaise === null ? "To confirm" : money(l.amountPaise),
+      cols.amount,
+      y,
+    );
+    y -= nameLines.length * 13;
+    draw(l.code, L + 12, y, 8, muted);
+    y -= 10;
+    line(y, 0.4);
+    y -= 16;
+  });
+  ensure(90);
+  const totals: [string, string, boolean][] = [];
+  if (q.discountPaise)
+    totals.push(
+      ["MRP total", money(q.mrpTotalPaise), false],
+      ["Discount", `− ${money(q.discountPaise)}`, false],
+    );
+  totals.push([
+    "Total",
+    q.totalPaise === null ? "To be confirmed" : money(q.totalPaise),
+    true,
+  ]);
+  for (const [label, value, grand] of totals) {
+    draw(label, 360, y, grand ? 11 : 9.5, grand ? ink : muted);
+    drawRight(value, R, y, grand ? 13 : 9.5);
+    y -= grand ? 22 : 15;
+  }
+  draw(
+    `${q.items.length} products · ${q.items.reduce((n, l) => n + l.quantity, 0)} units`,
+    L,
+    y + 8,
+    8,
+    muted,
   );
-  paragraph(`MRP total: ${money(total)}`, 14);
-  paragraph(
-    "Suggested MRP only. Prices and availability require confirmation. This enquiry does not reserve stock.",
-    9,
-  );
-  pages.forEach((p, i) =>
-    p.drawText(
-      `Lenore · Enquiry, not an invoice · ${i + 1} / ${pages.length}`,
-      { x: 44, y: 35, size: 8, font: sans, color: muted },
-    ),
-  );
+  y -= 10;
+  for (const [title, body] of [
+    ["NOTES", q.notes],
+    ["TERMS", q.terms],
+  ] as const) {
+    if (!body) continue;
+    const text = wrap(body, R - L, 8.5);
+    ensure(text.length * 12 + 24);
+    draw(title, L, y, 7, muted);
+    y -= 13;
+    for (const t of text) {
+      draw(t, L, y, 8.5, muted);
+      y -= 12;
+    }
+    y -= 8;
+  }
+  const foot = `${business.legalName} · ${addressLine} · GSTIN ${business.gstin} · ${business.phoneDisplay} · ${business.email}`;
+  pages.forEach((p, i) => {
+    page = p;
+    const footLines = wrap(foot, R - L - 50, 7);
+    footLines.forEach((t, j) => draw(t, L, 44 - j * 10, 7, muted));
+    drawRight(`${i + 1} / ${pages.length}`, R, 44, 7, muted);
+  });
   const bytes = await pdf.save();
-  const url = URL.createObjectURL(
-    new Blob([new Uint8Array(bytes)], { type: "application/pdf" }),
-  );
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `Lenore-${q.reference}.pdf`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  return new File([new Uint8Array(bytes)], `Lenore-${q.number}.pdf`, {
+    type: "application/pdf",
+  });
 }
