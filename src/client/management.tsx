@@ -252,10 +252,12 @@ export function Management({ config }: { config: SiteConfig }) {
               if (busy) return;
               setBusy(true);
               setError("");
-              const password = new FormData(e.currentTarget).get("password");
+              const form = new FormData(e.currentTarget);
+              const username = form.get("username");
+              const password = form.get("password");
               e.currentTarget.reset();
               try {
-                await api("/session", { password }, "POST");
+                await api("/session", { username, password }, "POST");
                 setSignedIn(true);
               } catch (e) {
                 setError(errorMessage(e));
@@ -264,6 +266,17 @@ export function Management({ config }: { config: SiteConfig }) {
               }
             }}
           >
+            <label>
+              Username
+              <input
+                name="username"
+                required
+                maxLength={80}
+                autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
+              />
+            </label>
             <label>
               Workspace password
               <input

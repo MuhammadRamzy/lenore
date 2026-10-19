@@ -85,8 +85,12 @@ beforeEach(async () => {
       "quotes",
       "sessions",
       "rate_limits",
+      "catalogue_sessions",
     ].map((t) => bindings.DB.prepare(`DELETE FROM ${t}`)),
   );
+  await bindings.DB.prepare(
+    "UPDATE catalogue_access SET enabled=0,password_hash=NULL WHERE id=1",
+  ).run();
   token = crypto.randomUUID();
   await bindings.DB.prepare("INSERT INTO sessions VALUES(?,?)")
     .bind(await sha256(token), Date.now() + 60000)
@@ -122,11 +126,18 @@ describe("identity and request boundaries", () => {
   });
   it("logs in with configured credentials and revokes the session on logout", async () => {
     expect(
-      (await request("/session", { password: "wrong" }, "POST", false)).status,
+      (
+        await request(
+          "/session",
+          { username: "owner", password: "wrong" },
+          "POST",
+          false,
+        )
+      ).status,
     ).toBe(401);
     const response = await request(
       "/session",
-      { password: "test-password-only" },
+      { username: "owner", password: "test-password-only" },
       "POST",
       false,
     );
@@ -140,34 +151,72 @@ describe("identity and request boundaries", () => {
     expect((await request("/session", undefined, "DELETE")).status).toBe(200);
     expect((await request("/admin/products")).status).toBe(401);
   });
+  it("rejects the right password with an unknown username", async () => {
+    expect(
+      (
+        await request(
+          "/session",
+          { username: "someone-else", password: "test-password-only" },
+          "POST",
+          false,
+        )
+      ).status,
+    ).toBe(401);
+  });
   it("throttles repeated failed logins", async () => {
     for (let i = 0; i < 10; i++)
       expect(
-        (await request("/session", { password: "wrong" }, "POST", false))
-          .status,
-      ).toBe(401);
-    expect(
-      (await request("/session", { password: "wrong" }, "POST", false)).status,
-    ).toBe(429);
-  });
-  it("resets failed-attempt history after successful sign-in without disabling failure throttling", async () => {
-    for (let i = 0; i < 9; i++)
-      expect(
-        (await request("/session", { password: "wrong" }, "POST", false))
-          .status,
+        (
+          await request(
+            "/session",
+            { username: "owner", password: "wrong" },
+            "POST",
+            false,
+          )
+        ).status,
       ).toBe(401);
     expect(
       (
         await request(
           "/session",
-          { password: "test-password-only" },
+          { username: "owner", password: "wrong" },
+          "POST",
+          false,
+        )
+      ).status,
+    ).toBe(429);
+  });
+  it("resets failed-attempt history after successful sign-in without disabling failure throttling", async () => {
+    for (let i = 0; i < 9; i++)
+      expect(
+        (
+          await request(
+            "/session",
+            { username: "owner", password: "wrong" },
+            "POST",
+            false,
+          )
+        ).status,
+      ).toBe(401);
+    expect(
+      (
+        await request(
+          "/session",
+          { username: "owner", password: "test-password-only" },
           "POST",
           false,
         )
       ).status,
     ).toBe(200);
     expect(
-      (await request("/session", { password: "wrong" }, "POST", false)).status,
+      (
+        await request(
+          "/session",
+          { username: "owner", password: "wrong" },
+          "POST",
+          false,
+        )
+      ).status,
     ).toBe(401);
     expect(
       await bindings.DB.prepare("SELECT attempts FROM rate_limits").first(
@@ -1120,6 +1169,98 @@ describe("finance subledger", () => {
             reason: "Cannot reopen",
           },
           "POST",
+        )
+      ).status,
+    ).toBe(409);
+  });
+});
+
+describe("catalogue access", () => {
+  const visitor = (path: string, init: RequestInit = {}, cookie = "") =>
+    SELF.fetch(`${base}/api${path}`, {
+      ...init,
+      headers: {
+        Origin: base,
+        "Content-Type": "application/json",
+        ...(cookie ? { Cookie: cookie } : {}),
+      },
+    });
+  async function settings() {
+    return (await (await request("/admin/catalogue-access")).json()) as {
+      protected: boolean;
+      hasPassword: boolean;
+      revision: number;
+    };
+  }
+  it("is open by default and requires a password before protection", async () => {
+    expect(await (await visitor("/catalogue-access")).json()).toEqual({
+      protected: false,
+      authorized: true,
+    });
+    const s = await settings();
+    expect(
+      (
+        await request(
+          "/admin/catalogue-access",
+          { protected: true, revision: s.revision },
+          "PUT",
+        )
+      ).status,
+    ).toBe(400);
+  });
+  it("protects the catalogue, admits the right password and revokes sessions", async () => {
+    await create({ published: true });
+    const s = await settings();
+    const enabled = await request(
+      "/admin/catalogue-access",
+      { protected: true, password: "dealer-pass-1", revision: s.revision },
+      "PUT",
+    );
+    expect(enabled.status).toBe(200);
+    expect((await visitor("/catalogue")).status).toBe(401);
+    expect((await request("/catalogue")).status).toBe(200);
+    expect(
+      (
+        await visitor("/catalogue-access", {
+          method: "POST",
+          body: JSON.stringify({ password: "wrong" }),
+        })
+      ).status,
+    ).toBe(401);
+    const unlocked = await visitor("/catalogue-access", {
+      method: "POST",
+      body: JSON.stringify({ password: "dealer-pass-1" }),
+    });
+    expect(unlocked.status).toBe(200);
+    const cookie = /lenore_catalogue=[^;]+/.exec(
+      unlocked.headers.get("set-cookie")!,
+    )![0];
+    expect((await visitor("/catalogue", {}, cookie)).status).toBe(200);
+    const current = await settings();
+    expect(
+      (
+        await request(
+          "/admin/catalogue-access/revoke",
+          { revision: current.revision },
+          "POST",
+        )
+      ).status,
+    ).toBe(200);
+    expect((await visitor("/catalogue", {}, cookie)).status).toBe(401);
+  });
+  it("rejects stale settings revisions", async () => {
+    const s = await settings();
+    await request(
+      "/admin/catalogue-access",
+      { protected: false, password: "first-pass", revision: s.revision },
+      "PUT",
+    );
+    expect(
+      (
+        await request(
+          "/admin/catalogue-access",
+          { protected: false, revision: s.revision },
+          "PUT",
         )
       ).status,
     ).toBe(409);

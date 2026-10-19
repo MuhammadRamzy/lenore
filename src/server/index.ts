@@ -12,7 +12,7 @@ import {
 } from "../shared";
 import { sha256, verifyPassword, consumeLimit } from "./auth";
 import finance from "./finance";
-import catalogueAccess, {catalogueAuthorized} from "./catalogue-access";
+import catalogueAccess, { catalogueAuthorized } from "./catalogue-access";
 
 export type Bindings = {
   DB: D1Database;
@@ -79,7 +79,10 @@ app.use(
   }),
 );
 
-export async function authenticated(c: { req: { raw: Request }; env: Bindings }) {
+export async function authenticated(c: {
+  req: { raw: Request };
+  env: Bindings;
+}) {
   const cookies = c.req.raw.headers.get("cookie") ?? "";
   const token = /(?:^|;\s*)lenore_session=([^;]+)/.exec(cookies)?.[1];
   if (!token) return false;
@@ -122,9 +125,21 @@ app.post("/api/session", async (c) => {
       429,
     );
   const data = z
-    .object({ username: z.string().min(1).max(80),password: z.string().min(1).max(256) })
+    .object({
+      username: z.string().min(1).max(80),
+      password: z.string().min(1).max(256),
+    })
     .parse(await c.req.json());
-  if (data.username !== c.env.ADMIN_USERNAME || !(await verifyPassword(data.password, c.env.ADMIN_PASSWORD_HASH)))
+  // Always verify the password so an unknown username takes the same time.
+  const passwordOk = await verifyPassword(
+    data.password,
+    c.env.ADMIN_PASSWORD_HASH,
+  );
+  if (
+    !c.env.ADMIN_USERNAME ||
+    data.username !== c.env.ADMIN_USERNAME ||
+    !passwordOk
+  )
     return c.json({ error: "Login not recognised. Please try again." }, 401);
   await c.env.DB.prepare("DELETE FROM rate_limits WHERE key=?")
     .bind(`login:${await sha256(c.req.header("CF-Connecting-IP") ?? "local")}`)
@@ -158,7 +173,11 @@ app.delete("/api/session", async (c) => {
 });
 
 app.get("/api/catalogue", async (c) => {
-  if(!await catalogueAuthorized(c))return c.json({error:"Enter the catalogue password to view this collection."},401);
+  if (!(await catalogueAuthorized(c)))
+    return c.json(
+      { error: "Enter the catalogue password to view this collection." },
+      401,
+    );
   const rows = await c.env.DB.prepare(
     "SELECT * FROM products WHERE published=1 ORDER BY category,name LIMIT 2000",
   ).all<Row>();
@@ -372,7 +391,10 @@ app.get("/api/media/:key", async (c) => {
   )
     .bind(c.req.param("key"), c.req.param("key"))
     .first<{ published: number }>();
-  if (!p || (!p.published ? !(await authenticated(c)) : !(await catalogueAuthorized(c))))
+  if (
+    !p ||
+    (!p.published ? !(await authenticated(c)) : !(await catalogueAuthorized(c)))
+  )
     return c.json({ error: "Image not found." }, 404);
   const object = await c.env.MEDIA.get(c.req.param("key"));
   if (!object) return c.json({ error: "Image not found." }, 404);
@@ -394,7 +416,11 @@ app.get("/api/admin/activity", async (c) => {
   return c.json(rows.results);
 });
 app.post("/api/quotes", async (c) => {
-  if(!await catalogueAuthorized(c))return c.json({error:"Unlock the catalogue before sending an enquiry."},401);
+  if (!(await catalogueAuthorized(c)))
+    return c.json(
+      { error: "Unlock the catalogue before sending an enquiry." },
+      401,
+    );
   const data = quoteInput.parse(await c.req.json());
   const fingerprint = await sha256(JSON.stringify(data));
   const previous = await c.env.DB.prepare(

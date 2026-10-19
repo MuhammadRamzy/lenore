@@ -17,6 +17,7 @@ export default defineConfig({
       miniflare: {
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations("./migrations"),
+          ADMIN_USERNAME: "owner",
           ADMIN_PASSWORD_HASH: `pbkdf2$${salt}$${hash}`,
           DEMO_MODE: "false",
         },
