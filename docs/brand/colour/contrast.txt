@@ -1,0 +1,19 @@
+Lenore colour contrast (WCAG 2.x). AA needs 4.5:1 for body text, 3:1 for large text and graphics.
+
+Lenore Ink       #151515  on White 18.26:1  on Stone 16.75:1  on Ink   1.0:1
+Lenore Bronze    #8A5A2B  on White  5.87:1  on Stone  5.38:1  on Ink  3.11:1
+Stone            #F6F5F2  on White  1.09:1  on Stone   1.0:1  on Ink 16.75:1
+Bronze Light     #C99A63  on White  2.53:1  on Stone  2.32:1  on Ink  7.21:1
+Bronze Deep      #7A4E26  on White  7.13:1  on Stone  6.54:1  on Ink  2.56:1
+Sand             #D7C2A1  on White  1.73:1  on Stone  1.59:1  on Ink 10.54:1
+Bronze Tint      #F5EDE4  on White  1.16:1  on Stone  1.06:1  on Ink 15.75:1
+White            #FFFFFF  on White   1.0:1  on Stone  1.09:1  on Ink 18.26:1
+Stone Deep       #EEECE7  on White  1.18:1  on Stone  1.08:1  on Ink 15.47:1
+Line             #E5E2DC  on White  1.29:1  on Stone  1.19:1  on Ink 14.13:1
+Muted            #696762  on White  5.65:1  on Stone  5.18:1  on Ink  3.23:1
+Graphite         #3B3A37  on White 11.37:1  on Stone 10.43:1  on Ink  1.61:1
+In stock         #2B6A3A  on White  6.51:1  on Stone  5.97:1  on Ink   2.8:1
+Limited          #865410  on White  6.38:1  on Stone  5.86:1  on Ink  2.86:1
+Unavailable      #9A2D2A  on White  7.55:1  on Stone  6.92:1  on Ink  2.42:1
+WhatsApp         #167A42  on White  5.39:1  on Stone  4.94:1  on Ink  3.39:1
+Workspace Slate  #202A34  on White 14.56:1  on Stone 13.36:1  on Ink  1.25:1

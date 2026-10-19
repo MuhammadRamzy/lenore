@@ -1,0 +1,407 @@
+{
+  "name": "Lenore colour palette",
+  "version": "1.0",
+  "gradient": {
+    "bronze": [
+      "#C99A63",
+      "#7A4E26"
+    ],
+    "bronzeOnDark": [
+      "#E2BE8A",
+      "#B07D4C"
+    ]
+  },
+  "colours": [
+    {
+      "group": "primary",
+      "name": "Lenore Ink",
+      "token": "ink",
+      "hex": "#151515",
+      "rgb": [
+        21,
+        21,
+        21
+      ],
+      "cmyk": [
+        0,
+        0,
+        0,
+        92
+      ],
+      "use": "Text, primary buttons, the wordmark on light backgrounds.",
+      "contrast": {
+        "onWhite": 18.26,
+        "onStone": 16.75,
+        "onInk": 1.0
+      }
+    },
+    {
+      "group": "primary",
+      "name": "Lenore Bronze",
+      "token": "bronze",
+      "hex": "#8A5A2B",
+      "rgb": [
+        138,
+        90,
+        43
+      ],
+      "cmyk": [
+        0,
+        35,
+        69,
+        46
+      ],
+      "use": "The brand accent: the mark, small headings, highlights. Use sparingly.",
+      "contrast": {
+        "onWhite": 5.87,
+        "onStone": 5.38,
+        "onInk": 3.11
+      }
+    },
+    {
+      "group": "primary",
+      "name": "Stone",
+      "token": "stone",
+      "hex": "#F6F5F2",
+      "rgb": [
+        246,
+        245,
+        242
+      ],
+      "cmyk": [
+        0,
+        0,
+        2,
+        4
+      ],
+      "use": "Default page and paper background.",
+      "contrast": {
+        "onWhite": 1.09,
+        "onStone": 1.0,
+        "onInk": 16.75
+      }
+    },
+    {
+      "group": "secondary",
+      "name": "Bronze Light",
+      "token": "bronze-light",
+      "hex": "#C99A63",
+      "rgb": [
+        201,
+        154,
+        99
+      ],
+      "cmyk": [
+        0,
+        23,
+        51,
+        21
+      ],
+      "use": "Top of the bronze gradient; never for text.",
+      "contrast": {
+        "onWhite": 2.53,
+        "onStone": 2.32,
+        "onInk": 7.21
+      }
+    },
+    {
+      "group": "secondary",
+      "name": "Bronze Deep",
+      "token": "bronze-deep",
+      "hex": "#7A4E26",
+      "rgb": [
+        122,
+        78,
+        38
+      ],
+      "cmyk": [
+        0,
+        36,
+        69,
+        52
+      ],
+      "use": "Bottom of the bronze gradient; bronze text on light backgrounds.",
+      "contrast": {
+        "onWhite": 7.13,
+        "onStone": 6.54,
+        "onInk": 2.56
+      }
+    },
+    {
+      "group": "secondary",
+      "name": "Sand",
+      "token": "sand",
+      "hex": "#D7C2A1",
+      "rgb": [
+        215,
+        194,
+        161
+      ],
+      "cmyk": [
+        0,
+        10,
+        25,
+        16
+      ],
+      "use": "Accent text on Ink backgrounds.",
+      "contrast": {
+        "onWhite": 1.73,
+        "onStone": 1.59,
+        "onInk": 10.54
+      }
+    },
+    {
+      "group": "secondary",
+      "name": "Bronze Tint",
+      "token": "bronze-tint",
+      "hex": "#F5EDE4",
+      "rgb": [
+        245,
+        237,
+        228
+      ],
+      "cmyk": [
+        0,
+        3,
+        7,
+        4
+      ],
+      "use": "Soft highlight panels and selected states.",
+      "contrast": {
+        "onWhite": 1.16,
+        "onStone": 1.06,
+        "onInk": 15.75
+      }
+    },
+    {
+      "group": "neutral",
+      "name": "White",
+      "token": "white",
+      "hex": "#FFFFFF",
+      "rgb": [
+        255,
+        255,
+        255
+      ],
+      "cmyk": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "use": "Cards and surfaces on Stone.",
+      "contrast": {
+        "onWhite": 1.0,
+        "onStone": 1.09,
+        "onInk": 18.26
+      }
+    },
+    {
+      "group": "neutral",
+      "name": "Stone Deep",
+      "token": "stone-deep",
+      "hex": "#EEECE7",
+      "rgb": [
+        238,
+        236,
+        231
+      ],
+      "cmyk": [
+        0,
+        1,
+        3,
+        7
+      ],
+      "use": "Secondary surfaces, table stripes.",
+      "contrast": {
+        "onWhite": 1.18,
+        "onStone": 1.08,
+        "onInk": 15.47
+      }
+    },
+    {
+      "group": "neutral",
+      "name": "Line",
+      "token": "line",
+      "hex": "#E5E2DC",
+      "rgb": [
+        229,
+        226,
+        220
+      ],
+      "cmyk": [
+        0,
+        1,
+        4,
+        10
+      ],
+      "use": "Hairlines and borders.",
+      "contrast": {
+        "onWhite": 1.29,
+        "onStone": 1.19,
+        "onInk": 14.13
+      }
+    },
+    {
+      "group": "neutral",
+      "name": "Muted",
+      "token": "muted",
+      "hex": "#696762",
+      "rgb": [
+        105,
+        103,
+        98
+      ],
+      "cmyk": [
+        0,
+        2,
+        7,
+        59
+      ],
+      "use": "Secondary text.",
+      "contrast": {
+        "onWhite": 5.65,
+        "onStone": 5.18,
+        "onInk": 3.23
+      }
+    },
+    {
+      "group": "neutral",
+      "name": "Graphite",
+      "token": "graphite",
+      "hex": "#3B3A37",
+      "rgb": [
+        59,
+        58,
+        55
+      ],
+      "cmyk": [
+        0,
+        2,
+        7,
+        77
+      ],
+      "use": "Body text on light backgrounds when Ink is too strong.",
+      "contrast": {
+        "onWhite": 11.37,
+        "onStone": 10.43,
+        "onInk": 1.61
+      }
+    },
+    {
+      "group": "functional",
+      "name": "In stock",
+      "token": "ok",
+      "hex": "#2B6A3A",
+      "rgb": [
+        43,
+        106,
+        58
+      ],
+      "cmyk": [
+        59,
+        0,
+        45,
+        58
+      ],
+      "use": "Availability: in stock. Always with a label.",
+      "contrast": {
+        "onWhite": 6.51,
+        "onStone": 5.97,
+        "onInk": 2.8
+      }
+    },
+    {
+      "group": "functional",
+      "name": "Limited",
+      "token": "low",
+      "hex": "#865410",
+      "rgb": [
+        134,
+        84,
+        16
+      ],
+      "cmyk": [
+        0,
+        37,
+        88,
+        47
+      ],
+      "use": "Availability: limited stock.",
+      "contrast": {
+        "onWhite": 6.38,
+        "onStone": 5.86,
+        "onInk": 2.86
+      }
+    },
+    {
+      "group": "functional",
+      "name": "Unavailable",
+      "token": "out",
+      "hex": "#9A2D2A",
+      "rgb": [
+        154,
+        45,
+        42
+      ],
+      "cmyk": [
+        0,
+        71,
+        73,
+        40
+      ],
+      "use": "Availability: out of stock, errors.",
+      "contrast": {
+        "onWhite": 7.55,
+        "onStone": 6.92,
+        "onInk": 2.42
+      }
+    },
+    {
+      "group": "functional",
+      "name": "WhatsApp",
+      "token": "whatsapp",
+      "hex": "#167A42",
+      "rgb": [
+        22,
+        122,
+        66
+      ],
+      "cmyk": [
+        82,
+        0,
+        46,
+        52
+      ],
+      "use": "Only for WhatsApp buttons.",
+      "contrast": {
+        "onWhite": 5.39,
+        "onStone": 4.94,
+        "onInk": 3.39
+      }
+    },
+    {
+      "group": "functional",
+      "name": "Workspace Slate",
+      "token": "slate",
+      "hex": "#202A34",
+      "rgb": [
+        32,
+        42,
+        52
+      ],
+      "cmyk": [
+        38,
+        19,
+        0,
+        80
+      ],
+      "use": "Staff workspace navigation and the admin app icon.",
+      "contrast": {
+        "onWhite": 14.56,
+        "onStone": 13.36,
+        "onInk": 1.25
+      }
+    }
+  ]
+}

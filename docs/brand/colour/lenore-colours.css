@@ -1,0 +1,23 @@
+:root {
+  --lenore-ink: #151515;
+  --lenore-bronze: #8A5A2B;
+  --lenore-stone: #F6F5F2;
+  --lenore-bronze-light: #C99A63;
+  --lenore-bronze-deep: #7A4E26;
+  --lenore-sand: #D7C2A1;
+  --lenore-bronze-tint: #F5EDE4;
+  --lenore-white: #FFFFFF;
+  --lenore-stone-deep: #EEECE7;
+  --lenore-line: #E5E2DC;
+  --lenore-muted: #696762;
+  --lenore-graphite: #3B3A37;
+  --lenore-ok: #2B6A3A;
+  --lenore-low: #865410;
+  --lenore-out: #9A2D2A;
+  --lenore-whatsapp: #167A42;
+  --lenore-slate: #202A34;
+  --lenore-gradient-bronze: linear-gradient(180deg, #C99A63, #7A4E26);
+  --lenore-gradient-bronze-on-dark: linear-gradient(180deg, #E2BE8A, #B07D4C);
+  --lenore-font: "Manrope", system-ui, sans-serif;
+  --lenore-font-malayalam: "Noto Sans Malayalam", "Manrope", sans-serif;
+}
