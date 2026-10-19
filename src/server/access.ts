@@ -20,6 +20,8 @@ export type Viewer = {
   name: string;
   phone: string;
   maxDiscountBp: number | null;
+  /** May use the billing counter (admins always can). */
+  posAccess: boolean;
 };
 export type AppEnv = {
   Bindings: Bindings;
@@ -46,7 +48,7 @@ export async function loadViewer(c: AppContext): Promise<Viewer | null> {
   const token = cookie(c.req.raw, "lenore_session");
   if (!token) return null;
   const row = await c.env.DB.prepare(
-    `SELECT s.role,s.user_id,u.name,u.phone,u.max_discount_bp,u.last_active_at
+    `SELECT s.role,s.user_id,u.name,u.phone,u.max_discount_bp,u.last_active_at,u.pos_access
     FROM sessions s LEFT JOIN staff_users u ON u.id=s.user_id
     WHERE s.token_hash=? AND s.expires_at>? AND (s.user_id IS NULL OR u.active=1)`,
   )
@@ -58,6 +60,7 @@ export async function loadViewer(c: AppContext): Promise<Viewer | null> {
       phone: string | null;
       max_discount_bp: number | null;
       last_active_at: string | null;
+      pos_access: number | null;
     }>();
   if (!row) return null;
   if (
@@ -79,6 +82,7 @@ export async function loadViewer(c: AppContext): Promise<Viewer | null> {
     name: row.name ?? "Owner",
     phone: row.phone ?? "",
     maxDiscountBp: row.max_discount_bp,
+    posAccess: row.role !== "sales" || !!row.pos_access,
   };
 }
 export const isAdmin = (v: Viewer | null | undefined) =>
@@ -128,6 +132,7 @@ routes.get("/session", (c) => {
     phone: v?.phone ?? "",
     userId: v?.userId ?? null,
     maxDiscountBp: v?.maxDiscountBp ?? null,
+    posAccess: !!v?.posAccess,
   });
 });
 routes.post("/session", async (c) => {

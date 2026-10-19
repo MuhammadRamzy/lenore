@@ -89,7 +89,14 @@ beforeEach(async () => {
       "staff_users",
       "rate_limits",
       "catalogue_sessions",
-    ].map((t) => bindings.DB.prepare(`DELETE FROM ${t}`)),
+    ].map((t) =>
+      bindings.DB.prepare(
+        // Invoiced products are permanent records; leave them in place.
+        t === "products"
+          ? "DELETE FROM products WHERE id NOT IN (SELECT product_id FROM invoice_lines)"
+          : `DELETE FROM ${t}`,
+      ),
+    ),
   );
   await bindings.DB.prepare(
     "UPDATE catalogue_access SET mode='public',enabled=0,password_hash=NULL WHERE id=1",
@@ -1853,5 +1860,407 @@ describe("search engine rendering", () => {
     const missing = await page("/no-such-page");
     expect(missing.status).toBe(404);
     expect(await missing.text()).toContain("noindex");
+  });
+});
+
+describe("ERP and POS", () => {
+  const device = "test-counter-01";
+  const today = new Date().toLocaleDateString("en-CA", {
+    timeZone: "Asia/Kolkata",
+  });
+  async function stocked(
+    overrides: Partial<typeof body> & { gstRateBp?: number } = {},
+    qty = 10,
+  ) {
+    const p = await create({
+      published: true,
+      pricePaise: 118000,
+      ...overrides,
+      gstRateBp: overrides.gstRateBp ?? 1800,
+    } as Partial<typeof body>);
+    await adjust(p, qty);
+    return p;
+  }
+  async function block() {
+    const r = await request("/pos/numbers", { deviceId: device }, "POST");
+    expect(r.status).toBe(200);
+    return (await r.json()) as { fy: string; first: number; last: number };
+  }
+  const bill = (
+    b: { fy: string; first: number },
+    seqOffset: number,
+    lines: {
+      productId: string;
+      qty: number;
+      rate: number;
+      discount?: number;
+    }[],
+    extra: Record<string, unknown> = {},
+  ) => ({
+    id: crypto.randomUUID(),
+    deviceId: device,
+    seq: b.first + seqOffset,
+    fy: b.fy,
+    date: today,
+    shiftId: null,
+    customerId: null,
+    walkIn: { name: "", phone: "" },
+    quotationId: null,
+    lines: lines.map((l) => ({ discount: 0, ...l })),
+    payments: [],
+    notes: "",
+    offline: false,
+    ...extra,
+  });
+  it("bills with GST split, reserved numbers, stock posting and finance records; retries are safe", async () => {
+    const p = await stocked();
+    const b = await block();
+    const payload = bill(b, 0, [{ productId: p.id, qty: 2, rate: 118000 }], {
+      payments: [
+        {
+          id: crypto.randomUUID(),
+          method: "cash",
+          amount: 236000,
+          reference: "",
+        },
+      ],
+    });
+    const r = await request("/pos/invoices", payload, "POST");
+    expect(r.status).toBe(201);
+    const { invoice } = (await r.json()) as {
+      invoice: {
+        number: string;
+        taxable: number;
+        cgst: number;
+        sgst: number;
+        total: number;
+        paid: number;
+      };
+    };
+    expect(invoice.number).toBe(
+      `LT/${b.fy}/${String(b.first).padStart(4, "0")}`,
+    );
+    expect(invoice).toMatchObject({
+      taxable: 200000,
+      cgst: 18000,
+      sgst: 18000,
+      total: 236000,
+      paid: 236000,
+    });
+    expect((await request("/pos/invoices", payload, "POST")).status).toBe(200);
+    expect(
+      await bindings.DB.prepare("SELECT stock FROM products WHERE id=?")
+        .bind(p.id)
+        .first("stock"),
+    ).toBe(8);
+    expect(
+      await bindings.DB.prepare(
+        "SELECT COUNT(*) AS n FROM finance_documents WHERE id=?",
+      )
+        .bind(payload.id)
+        .first("n"),
+    ).toBe(1);
+    // Unreserved number, credit without a customer, price above MRP.
+    expect(
+      (
+        await request(
+          "/pos/invoices",
+          {
+            ...bill(b, 0, [{ productId: p.id, qty: 1, rate: 118000 }]),
+            seq: b.last + 500,
+          },
+          "POST",
+        )
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await request(
+          "/pos/invoices",
+          bill(b, 1, [{ productId: p.id, qty: 1, rate: 118000 }]),
+          "POST",
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await request(
+          "/pos/invoices",
+          bill(b, 1, [{ productId: p.id, qty: 1, rate: 120000 }], {
+            payments: [
+              {
+                id: crypto.randomUUID(),
+                method: "upi",
+                amount: 120000,
+                reference: "",
+              },
+            ],
+          }),
+          "POST",
+        )
+      ).status,
+    ).toBe(400);
+  });
+  it("records offline sales beyond stock with a shortfall flag instead of losing them", async () => {
+    const p = await stocked({ code: "OFF-1" }, 1);
+    const b = await block();
+    const r = await request(
+      "/pos/invoices",
+      bill(b, 0, [{ productId: p.id, qty: 3, rate: 118000 }], {
+        offline: true,
+        payments: [
+          {
+            id: crypto.randomUUID(),
+            method: "cash",
+            amount: 354000,
+            reference: "",
+          },
+        ],
+      }),
+      "POST",
+    );
+    expect(r.status).toBe(201);
+    const { invoice } = (await r.json()) as {
+      invoice: { shortfall: boolean; lines: { unpostedQty: number }[] };
+    };
+    expect(invoice.shortfall).toBe(true);
+    expect(invoice.lines[0].unpostedQty).toBe(2);
+    expect(
+      await bindings.DB.prepare("SELECT stock FROM products WHERE id=?")
+        .bind(p.id)
+        .first("stock"),
+    ).toBe(0);
+  });
+  it("returns partially then fully, restocking and refunding without exceeding the invoice", async () => {
+    const p = await stocked({ code: "RET-1" });
+    const b = await block();
+    const sale = bill(b, 0, [{ productId: p.id, qty: 3, rate: 33333 }], {
+      payments: [
+        {
+          id: crypto.randomUUID(),
+          method: "cash",
+          amount: 100000,
+          reference: "",
+        },
+      ],
+    });
+    const { invoice } = (await (
+      await request("/pos/invoices", sale, "POST")
+    ).json()) as { invoice: { id: string; total: number } };
+    const note = (qty: number) => ({
+      id: crypto.randomUUID(),
+      reason: "Customer return",
+      restock: true,
+      lines: [{ lineNo: 1, qty }],
+      refundMethod: "cash",
+      refundReference: "",
+      shiftId: null,
+    });
+    const first = await request(
+      `/pos/invoices/${invoice.id}/credit-notes`,
+      note(1),
+      "POST",
+    );
+    expect(first.status).toBe(201);
+    expect((await first.json()) as { refunded: number }).toMatchObject({
+      refunded: 33333,
+    });
+    expect(
+      (
+        await request(
+          `/pos/invoices/${invoice.id}/credit-notes`,
+          note(5),
+          "POST",
+        )
+      ).status,
+    ).toBe(400);
+    const last = (await (
+      await request(`/pos/invoices/${invoice.id}/credit-notes`, note(2), "POST")
+    ).json()) as {
+      invoice: { status: string; credited: number; refunded: number };
+    };
+    expect(last.invoice).toMatchObject({
+      status: "cancelled",
+      credited: invoice.total,
+      refunded: 100000,
+    });
+    expect(
+      await bindings.DB.prepare("SELECT stock FROM products WHERE id=?")
+        .bind(p.id)
+        .first("stock"),
+    ).toBe(10);
+  });
+  it("posts purchases with moving average cost, supplier returns and expense reversals", async () => {
+    const p = await stocked({ code: "PUR-1" }, 0);
+    await bindings.DB.prepare("UPDATE products SET cost_paise=NULL WHERE id=?")
+      .bind(p.id)
+      .run();
+    const sup = (await (
+      await request(
+        "/admin/erp/suppliers",
+        {
+          name: "Fittings Co",
+          phone: "",
+          gstin: "",
+          stateCode: "32",
+          address: "",
+          notes: "",
+        },
+        "POST",
+      )
+    ).json()) as { id: string };
+    const purchase = (id: string, bill: string, qty: number, cost: number) => ({
+      id,
+      supplierId: sup.id,
+      billNumber: bill,
+      date: today,
+      lines: [{ productId: p.id, qty, costPaise: cost, gstRateBp: 1800 }],
+      notes: "",
+      payment: null,
+    });
+    const firstId = crypto.randomUUID();
+    expect(
+      (
+        await request(
+          "/admin/erp/purchases",
+          purchase(firstId, "B-1", 10, 50000),
+          "POST",
+        )
+      ).status,
+    ).toBe(201);
+    expect(
+      (
+        await request(
+          "/admin/erp/purchases",
+          purchase(crypto.randomUUID(), "B-1", 1, 1),
+          "POST",
+        )
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await request(
+          "/admin/erp/purchases",
+          purchase(crypto.randomUUID(), "B-2", 10, 70000),
+          "POST",
+        )
+      ).status,
+    ).toBe(201);
+    expect(
+      await bindings.DB.prepare("SELECT cost_paise FROM products WHERE id=?")
+        .bind(p.id)
+        .first("cost_paise"),
+    ).toBe(60000);
+    const ret = await request(
+      `/admin/erp/purchases/${firstId}/returns`,
+      {
+        id: crypto.randomUUID(),
+        date: today,
+        reason: "Damaged in transit",
+        lines: [{ productId: p.id, qty: 2 }],
+        refundMethod: null,
+        refundReference: "",
+      },
+      "POST",
+    );
+    expect(ret.status).toBe(201);
+    expect(
+      await bindings.DB.prepare("SELECT stock FROM products WHERE id=?")
+        .bind(p.id)
+        .first("stock"),
+    ).toBe(18);
+    const exp = {
+      id: crypto.randomUUID(),
+      date: today,
+      category: "Transport and freight",
+      payee: "Lorry",
+      description: "",
+      billNumber: "",
+      gstin: "",
+      amount: 150000,
+      gst: 0,
+      method: "cash",
+      reference: "",
+      shiftId: null,
+    };
+    expect((await request("/admin/erp/expenses", exp, "POST")).status).toBe(
+      201,
+    );
+    const reversed = (await (
+      await request(
+        `/admin/erp/expenses/${exp.id}/reverse`,
+        { reason: "Entered twice" },
+        "POST",
+      )
+    ).json()) as { status: string };
+    expect(reversed.status).toBe("reversed");
+  });
+  it("balances a cash shift from opening float, sales, cash out and drawer expenses", async () => {
+    const p = await stocked({ code: "SHF-1" });
+    const shiftId = crypto.randomUUID();
+    expect(
+      (
+        await request(
+          "/pos/shifts",
+          { id: shiftId, deviceId: device, openingFloat: 200000 },
+          "POST",
+        )
+      ).status,
+    ).toBe(201);
+    const b = await block();
+    await request(
+      "/pos/invoices",
+      bill(b, 0, [{ productId: p.id, qty: 1, rate: 118000 }], {
+        shiftId,
+        payments: [
+          {
+            id: crypto.randomUUID(),
+            method: "cash",
+            amount: 118000,
+            reference: "",
+          },
+        ],
+      }),
+      "POST",
+    );
+    await request(
+      `/pos/shifts/${shiftId}/cash`,
+      {
+        id: crypto.randomUUID(),
+        kind: "out",
+        amount: 50000,
+        reason: "Bank deposit",
+      },
+      "POST",
+    );
+    await request(
+      "/pos/expenses",
+      {
+        id: crypto.randomUUID(),
+        date: today,
+        category: "Staff welfare and food",
+        payee: "Tea",
+        description: "",
+        billNumber: "",
+        gstin: "",
+        amount: 8000,
+        gst: 0,
+        method: "cash",
+        reference: "",
+        shiftId,
+      },
+      "POST",
+    );
+    const closed = (await (
+      await request(
+        `/pos/shifts/${shiftId}/close`,
+        { countedCash: 260000, notes: "" },
+        "POST",
+      )
+    ).json()) as { expectedCash: number; status: string };
+    expect(closed).toMatchObject({
+      status: "closed",
+      expectedCash: 200000 + 118000 - 50000 - 8000,
+    });
   });
 });

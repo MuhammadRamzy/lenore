@@ -168,6 +168,7 @@ export type SessionInfo = {
   phone: string;
   userId: string | null;
   maxDiscountBp: number | null;
+  posAccess: boolean;
 };
 export const teamInput = z
   .object({
@@ -178,6 +179,7 @@ export const teamInput = z
       .pipe(z.string().regex(/^\d{7,15}$/, "Enter 7 to 15 digits")),
     role: z.enum(["admin", "sales"]),
     maxDiscountBp: z.number().int().min(0).max(10000).nullable(),
+    posAccess: z.boolean().default(false),
     password: z.string().min(8, "Use at least 8 characters").max(128),
   })
   .strict();
@@ -196,6 +198,7 @@ export type TeamMember = {
   role: "admin" | "sales";
   active: boolean;
   maxDiscountBp: number | null;
+  posAccess: boolean;
   revision: number;
   createdAt: string;
   lastActiveAt: string | null;

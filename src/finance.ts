@@ -54,7 +54,7 @@ export const documentInput = z
       "export_igst",
     ]),
     parentId: z.uuid().nullable(),
-    source: z.enum(["manual", "csv", "billing_export"]),
+    source: z.enum(["manual", "csv", "billing_export", "pos"]),
     notes: text(2000),
     export: z
       .object({

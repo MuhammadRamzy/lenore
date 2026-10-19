@@ -16,6 +16,7 @@ import quotations, { readSettings } from "./quotations";
 import team from "./team";
 import insights from "./insights";
 import seo, { notFound } from "./seo";
+import erp from "./erp";
 
 export type { Bindings };
 
@@ -195,6 +196,7 @@ app.route("/api", products);
 app.route("/api", quotations);
 app.route("/api/admin/team", team);
 app.route("/api/admin", insights);
+app.route("/api", erp);
 app.route("/api/admin/finance", finance);
 app.all("/api/*", (c) => c.json({ error: "Route not found." }, 404));
 app.route("/", seo);
