@@ -358,31 +358,14 @@
 .invoice-preview,
 .z-preview {
   overflow: auto;
+  container-type: inline-size;
   padding: 16px;
   border: 1px solid var(--line, #e5e2dc);
   border-radius: 12px;
   background: #fff;
   font-size: 12px;
 }
-.invoice-preview .a4-invoice header,
-.invoice-preview .a4-invoice footer {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-}
-.invoice-preview table {
-  width: 100%;
-  border-collapse: collapse;
-}
-.invoice-preview th,
-.invoice-preview td {
-  padding: 4px;
-  border-bottom: 1px solid #eee;
-  text-align: left;
-}
-.invoice-preview .num {
-  text-align: right;
-}
+
 .invoice-preview small {
   display: block;
   color: #777;
@@ -683,5 +666,27 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 2px;
+  }
+}
+
+/* Scale the A4 preview to fit narrow screens, like a print preview. */
+@container (max-width: 700px) {
+  .invoice-preview .a4-invoice {
+    zoom: 0.88;
+  }
+}
+@container (max-width: 600px) {
+  .invoice-preview .a4-invoice {
+    zoom: 0.72;
+  }
+}
+@container (max-width: 480px) {
+  .invoice-preview .a4-invoice {
+    zoom: 0.56;
+  }
+}
+@container (max-width: 380px) {
+  .invoice-preview .a4-invoice {
+    zoom: 0.44;
   }
 }

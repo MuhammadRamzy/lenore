@@ -4,6 +4,7 @@
 
 - Migration 0010: `products.on_website`/`featured`, `website_categories`, `website_settings` (initialised from the previous rule: products, prices and stock shown only if the catalogue was public). Website visibility is now independent of catalogue access; anonymous catalogue readers get the website's view. Admin view: Workspace → Website (`src/server/website.ts`, `WebsitePanel`).
 - Migration 0011: UPI ID and bank details in `erp_settings`, with `qr_on_bills` (off/due/always) and `bank_on_invoice`. UPI links follow the `upi://pay` format with a literal `@` in the payee address; QR rendered with `qrcode-generator` (SVG) and natively via ESC/POS `GS ( k` for direct printing. Owner must enter the real UPI ID and test with a ₹1 scan (preview shown in Billing settings).
+- Bills redesigned (`src/client/pos/print.tsx`, `documents.css`): logo (`lenore-mark-print.png`, inlined by Vite so offline printing works), GST summary by rate, savings on MRP, and a cancelled stamp. Documents print through a `PrintArea` portal under `<body>`, so the app is removed with display:none (this fixed the extra blank pages). Named `@page` rules handle the receipt and A4 page sizes. The ESC/POS logo uses `GS v 0`; check it on the shop's printer.
 - Fixed a duplicate offline banner in the sales app; browser tests no longer depend on demo stock counts.
 
 ## Claude · 2026-10-19 · Stage B (ERP/POS) and audit complete

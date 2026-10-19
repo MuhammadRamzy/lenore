@@ -12,7 +12,7 @@ import { api, errorMessage } from "../api";
 import { Overlay } from "../overlay";
 import { Sheet } from "../sales/ui";
 import { CollectForm, ReturnForm } from "../pos/app";
-import { TaxInvoice, ZReport } from "../pos/print";
+import { PrintArea, TaxInvoice, ZReport } from "../pos/print";
 import { UpiQr } from "../pos/qr";
 import type { ShiftSummary } from "../pos/store";
 import {
@@ -378,7 +378,12 @@ function InvoiceSheet({
               </button>
             )}
           </div>
-          <div className="invoice-preview">
+          <div
+            className="invoice-preview"
+            tabIndex={0}
+            role="region"
+            aria-label="Invoice preview"
+          >
             <TaxInvoice invoice={invoice} payment={payment} />
           </div>
           <h3>Payments</h3>
@@ -415,9 +420,9 @@ function InvoiceSheet({
               </ul>
             </>
           )}
-          <div className="print-area" aria-hidden="true">
+          <PrintArea>
             <TaxInvoice invoice={invoice} payment={payment} />
-          </div>
+          </PrintArea>
         </div>
       )}
       {mode === "return" && (

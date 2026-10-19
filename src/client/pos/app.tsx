@@ -37,7 +37,7 @@ import "./pos.css";
 import { Mark } from "../site/site";
 import { whatsappLink, withCountry } from "../links";
 import { Sheet } from "../sales/ui";
-import { Receipt, TaxInvoice, ZReport } from "./print";
+import { PrintArea, Receipt, TaxInvoice, ZReport } from "./print";
 import { UpiQr } from "./qr";
 import {
   connectPrinter,
@@ -1000,7 +1000,7 @@ function Counter({
           {toast}
         </div>
       )}
-      <div className="print-area" aria-hidden="true">
+      <PrintArea>
         {printMode === "z" ? (
           <ZReport shift={shift} />
         ) : done ? (
@@ -1018,7 +1018,7 @@ function Counter({
             />
           )
         ) : null}
-      </div>
+      </PrintArea>
       <p className="pos-foot fine-print">
         {reserved} invoice numbers reserved on this counter
       </p>

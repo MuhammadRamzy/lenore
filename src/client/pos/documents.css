@@ -1,0 +1,436 @@
+/* Printed documents: 80 mm receipt, A4 tax invoice and shift reports.
+   The same styles render the on-screen previews, so what staff see is what prints. */
+.receipt,
+.a4-invoice {
+  --doc-ink: #111;
+  --doc-muted: #555;
+  --doc-line: #c9c4bb;
+  --doc-accent: #8a5a2b;
+  --doc-tint: #f4f1ec;
+  color: var(--doc-ink);
+  font-family: "Manrope", system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.receipt *,
+.a4-invoice * {
+  box-sizing: border-box;
+}
+.receipt :where(h1, h2, p, dl, dd, ol),
+.a4-invoice :where(h1, h2, p, dl, dd, ol) {
+  margin: 0;
+}
+.receipt p,
+.a4-invoice p {
+  max-width: none;
+}
+
+/* ───── 80 mm thermal receipt (72 mm printable) ───── */
+.receipt {
+  width: 72mm;
+  padding: 2mm 0 4mm;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #000;
+  background: #fff;
+}
+.receipt .center {
+  text-align: center;
+}
+.receipt .big {
+  font-size: 18px;
+  letter-spacing: 0.2em;
+}
+.receipt .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.receipt .row > :last-child {
+  text-align: right;
+  white-space: nowrap;
+}
+.receipt .strong {
+  font-weight: 700;
+}
+.receipt .total {
+  font-size: 15px;
+  font-weight: 700;
+}
+.receipt .rule {
+  margin: 6px 0;
+  border-top: 1px dashed #000;
+}
+.receipt .muted {
+  font-size: 9.5px;
+  color: #000;
+}
+.receipt .item {
+  margin-bottom: 4px;
+}
+.receipt-head {
+  display: grid;
+  justify-items: center;
+  gap: 1px;
+  padding-bottom: 6px;
+  text-align: center;
+}
+.receipt-head .doc-mark {
+  margin-bottom: 4px;
+}
+.receipt-brand {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  /* Letter spacing trails the last glyph; balance it so the word centres. */
+  margin-right: -0.32em;
+}
+.receipt-tagline {
+  font-size: 8.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  margin-right: -0.22em;
+}
+.receipt-seller {
+  margin-top: 6px;
+  font-size: 10px;
+  line-height: 1.35;
+}
+.receipt-title {
+  margin: 4px 0 6px;
+  padding: 3px 0;
+  border-block: 1px solid #000;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-align: center;
+}
+.receipt-meta {
+  display: grid;
+  gap: 1px;
+  font-size: 10.5px;
+}
+.receipt-meta > div {
+  display: grid;
+  grid-template-columns: 17mm 1fr;
+  gap: 4px;
+}
+.receipt-meta dt {
+  font-weight: 400;
+}
+.receipt-meta dd {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.receipt-items {
+  margin-top: 8px;
+}
+.receipt-cols {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+  border-block: 1px dashed #000;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.receipt-item {
+  padding: 5px 0;
+  border-bottom: 1px dotted #000;
+}
+.receipt-item-name {
+  font-weight: 700;
+}
+.receipt-sums {
+  display: grid;
+  gap: 1px;
+  padding: 6px 0;
+}
+.receipt-total {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 6px;
+  background: #000;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.receipt-pays {
+  display: grid;
+  gap: 1px;
+  padding: 6px 0;
+}
+.receipt-saved {
+  margin: 2px 0 6px;
+  padding: 4px;
+  border: 1px dashed #000;
+  font-weight: 700;
+  text-align: center;
+}
+.receipt-qr {
+  padding: 8px 0 4px;
+  border-top: 1px dashed #000;
+}
+.receipt .upi-qr {
+  flex-direction: column;
+  gap: 4px;
+  text-align: center;
+}
+.receipt-foot {
+  display: grid;
+  gap: 2px;
+  padding-top: 6px;
+  border-top: 1px dashed #000;
+  text-align: center;
+}
+.receipt-thanks {
+  margin-top: 4px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* ───── A4 GST tax invoice ───── */
+.a4-invoice {
+  position: relative;
+  /* A fixed page width keeps the layout identical on screen and paper. */
+  width: 190mm;
+  flex: none;
+  font-size: 9.5pt;
+  line-height: 1.45;
+  background: #fff;
+}
+.a4-invoice h2 {
+  margin-bottom: 3px;
+  color: var(--doc-accent);
+  font-size: 7.5pt;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.a4-invoice small {
+  display: block;
+  color: var(--doc-muted);
+  font-size: 8pt;
+}
+.a4-invoice .num {
+  text-align: right;
+  white-space: nowrap;
+}
+.inv-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--doc-accent);
+}
+.inv-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.inv-wordmark {
+  font-size: 22pt;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.3em;
+}
+.inv-tagline {
+  margin-top: 4px;
+  color: var(--doc-accent);
+  font-size: 7.5pt;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+}
+.inv-title {
+  text-align: right;
+}
+.inv-title h1 {
+  font-size: 16pt;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.inv-title div {
+  color: var(--doc-muted);
+  font-size: 8pt;
+}
+.inv-parties {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr 0.95fr;
+  gap: 0;
+  margin: 12px 0;
+  border: 1px solid var(--doc-line);
+}
+.inv-parties > * {
+  padding: 8px 10px;
+}
+.inv-parties > * + * {
+  border-left: 1px solid var(--doc-line);
+}
+.inv-parties dl {
+  display: grid;
+  gap: 2px;
+  background: var(--doc-tint);
+}
+.inv-parties dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.inv-parties dt {
+  color: var(--doc-muted);
+}
+.inv-parties dd {
+  font-weight: 600;
+  text-align: right;
+}
+.a4-invoice table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.a4-invoice th {
+  padding: 5px 6px;
+  background: var(--doc-ink);
+  color: #fff;
+  font-size: 7.5pt;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+}
+.a4-invoice td {
+  padding: 6px;
+  border-bottom: 1px solid var(--doc-line);
+  vertical-align: top;
+}
+.inv-items tbody tr:nth-child(even) td {
+  background: var(--doc-tint);
+}
+.inv-summary {
+  display: grid;
+  grid-template-columns: 1fr 68mm;
+  gap: 16px;
+  margin-top: 12px;
+  break-inside: avoid;
+}
+.inv-tax th {
+  background: var(--doc-tint);
+  color: var(--doc-ink);
+}
+.inv-tax td {
+  padding: 3px 6px;
+}
+.inv-words {
+  margin-top: 10px;
+  font-weight: 600;
+}
+.inv-words span {
+  display: block;
+  color: var(--doc-muted);
+  font-size: 7.5pt;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.inv-saved {
+  margin-top: 6px;
+  color: var(--doc-accent);
+  font-weight: 600;
+}
+.inv-totals {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+}
+.inv-totals > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 8px;
+}
+.inv-totals .inv-grand {
+  margin: 4px 0;
+  padding: 7px 8px;
+  background: var(--doc-ink);
+  color: #fff;
+  font-size: 12pt;
+  font-weight: 700;
+}
+.inv-totals .inv-due {
+  font-weight: 700;
+  border-top: 1px solid var(--doc-ink);
+}
+.inv-pay {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-top: 14px;
+  padding: 10px;
+  border: 1px solid var(--doc-line);
+  break-inside: avoid;
+}
+.inv-pay dl {
+  display: grid;
+  gap: 1px;
+}
+.inv-pay dl > div {
+  display: grid;
+  grid-template-columns: 26mm 1fr;
+}
+.inv-pay dt {
+  color: var(--doc-muted);
+}
+.inv-pay dd {
+  font-weight: 600;
+}
+.inv-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  margin-top: 18px;
+  break-inside: avoid;
+}
+.inv-terms ol {
+  padding-left: 16px;
+  color: var(--doc-muted);
+  font-size: 8pt;
+}
+.inv-sign {
+  min-width: 60mm;
+  text-align: right;
+}
+.inv-sign-space {
+  height: 16mm;
+  border-bottom: 1px solid var(--doc-ink);
+  margin-bottom: 3px;
+}
+.inv-note {
+  margin-top: 14px;
+  padding-top: 6px;
+  border-top: 1px solid var(--doc-line);
+  color: var(--doc-muted);
+  font-size: 7.5pt;
+  text-align: center;
+}
+.a4-invoice.cancelled::after {
+  content: "CANCELLED";
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-24deg);
+  padding: 6px 20px;
+  border: 4px solid #b42318;
+  color: #b42318;
+  font-size: 40pt;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  opacity: 0.45;
+  pointer-events: none;
+}

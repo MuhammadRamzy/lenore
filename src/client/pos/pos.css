@@ -277,134 +277,27 @@
 }
 /* Printing: only the selected document. */
 @media print {
-  body * {
-    visibility: hidden;
-  }
-  .print-area,
-  .print-area * {
-    visibility: visible;
+  body:has(> .print-area) > :not(.print-area) {
+    display: none !important;
   }
   .print-area {
     display: block;
-    position: absolute;
-    inset: 0 auto auto 0;
   }
-  .receipt {
-    width: 72mm;
-    font:
-      11px/1.35 "Manrope",
-      sans-serif;
-    color: #000;
+  .print-area .receipt {
+    page: receipt;
   }
-  .receipt .center {
-    text-align: center;
-  }
-  .receipt .big {
-    font-size: 18px;
-    letter-spacing: 0.2em;
-  }
-  .receipt .row {
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .receipt .total {
-    font-size: 15px;
-    font-weight: 700;
-  }
-  .receipt .rule {
-    margin: 6px 0;
-    border-top: 1px dashed #000;
-  }
-  .receipt .muted {
-    font-size: 9px;
-  }
-  .receipt .item {
-    margin-bottom: 4px;
-  }
-  .a4-invoice {
-    width: 190mm;
-    font:
-      10pt/1.4 "Manrope",
-      sans-serif;
-    color: #000;
-  }
-  .a4-invoice header {
-    display: flex;
-    justify-content: space-between;
-    padding-bottom: 8px;
-    border-bottom: 1px solid #000;
-  }
-  .a4-invoice .right {
-    text-align: right;
-  }
-  .a4-invoice .big {
-    font-size: 20pt;
-    letter-spacing: 0.2em;
-  }
-  .a4-invoice .party {
-    padding: 8px 0;
-  }
-  .a4-invoice table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  .a4-invoice th,
-  .a4-invoice td {
-    padding: 4px;
-    border: 1px solid #999;
-    text-align: left;
-    vertical-align: top;
-  }
-  .a4-invoice small {
-    display: block;
-    color: #555;
-  }
-  .a4-invoice .num {
-    text-align: right;
-  }
-  .a4-invoice .totals {
-    display: grid;
-    justify-content: end;
-    margin-top: 8px;
-  }
-  .a4-invoice .totals div {
-    display: flex;
-    justify-content: space-between;
-    gap: 40px;
-  }
-  .a4-invoice .grand {
-    font-weight: 700;
-    font-size: 12pt;
-  }
-  .a4-invoice .words {
-    margin-top: 8px;
-    font-style: italic;
-  }
-  .a4-invoice footer {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 24px;
-  }
-  .a4-invoice .sign {
-    text-align: right;
-  }
-  .receipt .upi-qr {
-    flex-direction: column;
-    text-align: center;
-  }
-  .a4-invoice .pay-details {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 16px;
-    margin-top: 12px;
-    padding: 8px 0;
-    border-top: 1px solid #000;
-    font-size: 9pt;
+  .print-area .a4-invoice {
+    page: invoice;
   }
   @page {
     margin: 8mm;
+  }
+  @page receipt {
+    margin: 0;
+  }
+  @page invoice {
+    size: A4;
+    margin: 10mm;
   }
 }
 /* UPI QR: shared by the counter screen, receipts and invoices. */

@@ -1,5 +1,6 @@
 import { business } from "../../business";
 import { upiLink, type Invoice, type PaymentDetails } from "../../erp";
+import markUrl from "./lenore-mark-print.png";
 import { billQr } from "./qr";
 
 /** Direct ESC/POS printing to a USB/serial receipt printer (Chrome/Edge Web Serial). */
@@ -43,6 +44,44 @@ function qrBytes(data: string) {
     ...[0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x51, 0x30],
   ]);
 }
+/** Logo as an ESC/POS raster (GS v 0), centred; empty if the image cannot load. */
+async function logoBytes(height = 96) {
+  try {
+    const img = new Image();
+    img.src = markUrl;
+    await img.decode();
+    const w = Math.ceil((img.width * height) / img.height / 8) * 8;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(img, 0, 0, w, height);
+    const { data } = ctx.getImageData(0, 0, w, height);
+    const row = w / 8;
+    const bits = new Uint8Array(row * height);
+    for (let y = 0; y < height; y++)
+      for (let x = 0; x < w; x++)
+        if (data[(y * w + x) * 4 + 3] > 127)
+          bits[y * row + (x >> 3)] |= 0x80 >> (x & 7);
+    return new Uint8Array([
+      ...[0x1b, 0x61, 0x01],
+      ...[
+        0x1d,
+        0x76,
+        0x30,
+        0x00,
+        row & 0xff,
+        row >> 8,
+        height & 0xff,
+        height >> 8,
+      ],
+      ...bits,
+      0x0a,
+    ]);
+  } catch {
+    return new Uint8Array();
+  }
+}
 const ascii = (text: string) =>
   new TextEncoder().encode(
     // ESC/POS text is ASCII; drop characters the printer cannot render (₹ etc.).
@@ -58,8 +97,9 @@ export async function printEscPos(
 ) {
   if (!port) throw new Error("Connect the receipt printer first.");
   const lines = [
-    "\x1b@",
     "\x1ba\x01\x1b!\x30LENORE\x1b!\x00",
+    business.tagline.toUpperCase(),
+    "",
     business.legalName,
     `GSTIN ${business.gstin}`,
     `Ph ${business.phoneDisplay}`,
@@ -101,7 +141,12 @@ export async function printEscPos(
     "\n\n\n",
     "\x1dV\x41\x03",
   ];
-  const head = ascii(lines.join("\n") + "\n");
+  const head = new Uint8Array([
+    0x1b,
+    0x40,
+    ...(await logoBytes()),
+    ...ascii(lines.join("\n") + "\n"),
+  ]);
   const code = link ? qrBytes(link) : new Uint8Array();
   const rest = ascii(tail.join("\n"));
   const bytes = new Uint8Array([...head, ...code, ...rest]);
