@@ -37,5 +37,6 @@ if (data) {
     ),
   );
 }
-if ("serviceWorker" in navigator && !data && location.protocol === "https:")
+// Installable app shell for the catalogue and workspace (secure contexts only).
+if ("serviceWorker" in navigator && !data && window.isSecureContext)
   void navigator.serviceWorker.register("/sw.js").catch(() => undefined);

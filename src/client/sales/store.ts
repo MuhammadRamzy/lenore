@@ -220,3 +220,23 @@ export async function loadSession() {
   ]);
   return { session, access, config };
 }
+
+type SessionState = Awaited<ReturnType<typeof loadSession>>;
+export const rememberSession = (s: SessionState) =>
+  write("lenore-session-v1", s);
+export const cachedSession = () =>
+  read<SessionState | null>("lenore-session-v1", null);
+/** Sign-out on a shared phone removes cached stock and quotation data. */
+export function clearDeviceData() {
+  for (const key of [
+    "lenore-session-v1",
+    "lenore-catalogue-v2",
+    "lenore-catalogue-synced",
+    "lenore-my-quotes",
+  ])
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      /* Storage unavailable. */
+    }
+}

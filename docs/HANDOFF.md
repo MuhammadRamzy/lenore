@@ -1,5 +1,11 @@
 # Handoff
 
+## Claude · 2026-10-19 · Stage A complete, Stage B (ERP/POS) next
+
+- User redirected scope: no online purchasing. Built website (SSR/SEO), password/accounts-protected sales catalogue PWA, quotations with WhatsApp sharing, team accounts, inventory upgrades, admin insights. ADR 0005, `docs/PLAN.md`, `docs/REQUIREMENTS.md`, `docs/DEPLOYMENT.md`.
+- Fixed migration 0005 syntax and owner username login. Local owner login: username `owner` (see `local-access.txt`).
+- User asked to minimise test effort and continue to ERP/POS (one shop, one counter, short-outage tolerance, Firebase migration later).
+
 ## Codex · 2026-10-19 · Latest steering: architectural revision also rejected
 
 - User says theme/UI/UX/style still has an “AI slop vibe.” This overrides earlier scoped `ship` reviews. Do not represent current visuals as accepted. Asked async for two or three reference brands/sites; awaiting answer. Pause further speculative visual builds while continuing authorized finance backend work. Preserve luxury buyer / industrial admin requirements and catalogue feature parity.

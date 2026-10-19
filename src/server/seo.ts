@@ -24,7 +24,8 @@ async function template(c: AppContext) {
     if (response.ok) {
       const html = await response.text();
       if (html.includes('<div id="root"></div>')) {
-        cachedTemplate = html;
+        // Production deploys start new isolates; local rebuilds must not serve stale asset links.
+        if (c.env.SITE_ORIGIN) cachedTemplate = html;
         return html;
       }
     }

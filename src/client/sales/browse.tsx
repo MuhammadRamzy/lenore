@@ -150,7 +150,7 @@ export function Browse({
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search name, code or barcode"
+            placeholder="Search products"
             aria-label="Search products"
             enterKeyHint="search"
             autoComplete="off"

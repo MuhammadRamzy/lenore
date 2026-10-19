@@ -32,6 +32,7 @@
   display: grid;
   gap: 12px;
   margin: 0;
+  padding: 4px 18px 18px;
 }
 .workspace .stat-list div {
   display: flex;
@@ -51,11 +52,19 @@
 }
 .daily-chart {
   margin: 0;
+  padding: 8px 18px 16px;
 }
 .daily-chart svg {
   display: block;
   width: 100%;
-  height: auto;
+  height: 160px;
+}
+.daily-chart figcaption {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #506071;
 }
 .daily-chart .axis {
   stroke: #cdd5df;

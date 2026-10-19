@@ -323,11 +323,12 @@ function DailyChart({
   return (
     <figure className="daily-chart">
       <svg
-        viewBox={`0 0 ${W} ${H + 20}`}
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
         role="img"
         aria-label={`Quotations per day, last ${series.length} days, peak ${max}`}
       >
-        <line x1="0" x2={W} y1={H} y2={H} className="axis" />
+        <line x1="0" x2={W} y1={H - 0.5} y2={H - 0.5} className="axis" />
         {series.map((s, i) => {
           const h = (s.quotes / max) * (H - 8);
           const x = i * (bar + gap);
@@ -335,25 +336,25 @@ function DailyChart({
             <g key={s.day} className="bar-hit">
               <rect x={x} y={0} width={bar + gap} height={H} className="hit" />
               {s.quotes > 0 && (
-                <path
+                <rect
                   className="bar"
-                  d={`M${x},${H} v${-Math.max(0, h - 3)} q0,-3 3,-3 h${Math.max(0, bar - 6)} q3,0 3,3 v${Math.max(0, h - 3)} z`}
+                  x={x}
+                  y={H - h}
+                  width={bar}
+                  height={h}
+                  rx={2}
                 />
               )}
               <title>{`${s.day}: ${s.quotes} quotations, ${money(s.value)}`}</title>
             </g>
           );
         })}
-        <text x="0" y={H + 16} className="tick">
-          {series[0]?.day}
-        </text>
-        <text x={W} y={H + 16} className="tick" textAnchor="end">
-          {series.at(-1)?.day}
-        </text>
-        <text x={W} y="12" className="tick" textAnchor="end">
-          peak {max}
-        </text>
       </svg>
+      <figcaption>
+        <span>{series[0]?.day}</span>
+        <span>Peak {max} per day</span>
+        <span>{series.at(-1)?.day}</span>
+      </figcaption>
     </figure>
   );
 }
@@ -986,7 +987,24 @@ export function AccessPanel({ notify }: { notify: (m: string) => void }) {
             e.preventDefault();
             setError("");
             try {
-              await api("/admin/settings", config, "PUT");
+              const {
+                whatsapp,
+                pricingMode,
+                discountCapBp,
+                quoteValidityDays,
+                quoteTerms,
+              } = config;
+              await api(
+                "/admin/settings",
+                {
+                  whatsapp,
+                  pricingMode,
+                  discountCapBp,
+                  quoteValidityDays,
+                  quoteTerms,
+                },
+                "PUT",
+              );
               notify("Quotation settings saved.");
             } catch (err) {
               setError(errorMessage(err));

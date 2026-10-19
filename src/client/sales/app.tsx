@@ -11,7 +11,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { money, type CatalogueProduct, type Quotation } from "../../shared";
-import { api, errorMessage } from "../api";
+import { api, ApiError, errorMessage } from "../api";
 import { Mark } from "../site/site";
 import { Browse, ProductSheet } from "./browse";
 import {
@@ -22,8 +22,11 @@ import {
   pricingFor,
 } from "./quote";
 import {
+  cachedSession,
+  clearDeviceData,
   loadSession,
   newDraft,
+  rememberSession,
   useCatalogue,
   useDraft,
   useLocalQuotes,
@@ -71,8 +74,14 @@ export function SalesApp() {
         .then((s) => {
           setState(s);
           setLoadError("");
+          rememberSession(s);
         })
-        .catch((e) => setLoadError(errorMessage(e))),
+        .catch((e) => {
+          // Offline start: reopen the last session with the saved catalogue.
+          const cached = cachedSession();
+          if (cached && !(e instanceof ApiError)) setState(cached);
+          else setLoadError(errorMessage(e));
+        }),
     [],
   );
   useEffect(() => {
@@ -685,6 +694,7 @@ function Account({
                   await api("/catalogue-access", undefined, "DELETE").catch(
                     () => undefined,
                   );
+                clearDeviceData();
                 await reload();
               }}
             >
