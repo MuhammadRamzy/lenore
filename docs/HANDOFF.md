@@ -1,5 +1,12 @@
 # Handoff
 
+## Claude · 2026-10-19 · Stage B (ERP/POS) and audit complete
+
+- `/pos` billing counter, ERP workspace views (invoices, customers, purchases, expenses, register, reports, billing settings), separate PWAs for catalogue, admin and billing. Mobile workspace uses a bottom tab bar and full menu; verified no horizontal overflow at 390 px.
+- Audit report `docs/AUDIT.md`; migration 0009 adds indexes. Daily cron cleanup in `env.production`.
+- `./run.sh` runs everything locally. Demo items carry illustrative HSN/GST values for billing tests only.
+- Next: provision Cloudflare resources (docs/DEPLOYMENT.md), load real products, run a staging load test, then plan the Firebase migration.
+
 ## Claude · 2026-10-19 · Stage A complete, Stage B (ERP/POS) next
 
 - User redirected scope: no online purchasing. Built website (SSR/SEO), password/accounts-protected sales catalogue PWA, quotations with WhatsApp sharing, team accounts, inventory upgrades, admin insights. ADR 0005, `docs/PLAN.md`, `docs/REQUIREMENTS.md`, `docs/DEPLOYMENT.md`.
