@@ -19,6 +19,7 @@ import {
 import { ProductImage, StatusBadge } from "../site/site";
 import { whatsappLink } from "../links";
 import { Sheet, Stepper, relativeTime } from "./ui";
+import { Scanner } from "../scanner";
 
 type Sort = "name" | "code" | "price-asc" | "price-desc";
 const PAGE = 48;
@@ -387,112 +388,6 @@ export function Browse({
         </p>
       )}
     </section>
-  );
-}
-
-type Detector = {
-  detect: (source: CanvasImageSource) => Promise<{ rawValue: string }[]>;
-};
-declare global {
-  interface Window {
-    BarcodeDetector?: new (options?: { formats: string[] }) => Detector;
-  }
-}
-
-/** Camera scanning via the BarcodeDetector API; USB/Bluetooth scanners type into search instead. */
-function Scanner({
-  onDetect,
-  onClose,
-}: {
-  onDetect: (code: string) => void;
-  onClose: () => void;
-}) {
-  const video = useRef<HTMLVideoElement>(null);
-  const [message, setMessage] = useState("Point the camera at a barcode.");
-  const [manual, setManual] = useState("");
-  const supported = typeof window !== "undefined" && !!window.BarcodeDetector;
-  const detected = useRef(onDetect);
-  useEffect(() => {
-    detected.current = onDetect;
-  });
-  useEffect(() => {
-    if (!supported) return;
-    let stream: MediaStream | null = null;
-    let frame = 0;
-    let stopped = false;
-    const detector = new window.BarcodeDetector!({
-      formats: [
-        "ean_13",
-        "ean_8",
-        "code_128",
-        "code_39",
-        "upc_a",
-        "upc_e",
-        "qr_code",
-        "itf",
-      ],
-    });
-    navigator.mediaDevices
-      .getUserMedia({ video: { facingMode: "environment" } })
-      .then(async (s) => {
-        stream = s;
-        if (stopped) return s.getTracks().forEach((t) => t.stop());
-        video.current!.srcObject = s;
-        await video.current!.play();
-        const loop = async () => {
-          if (stopped) return;
-          try {
-            const codes = await detector.detect(video.current!);
-            if (codes[0]?.rawValue) return detected.current(codes[0].rawValue);
-          } catch {
-            /* Frame not ready yet. */
-          }
-          frame = window.setTimeout(loop, 200);
-        };
-        void loop();
-      })
-      .catch(() =>
-        setMessage("Camera access was blocked. Type the code instead."),
-      );
-    return () => {
-      stopped = true;
-      clearTimeout(frame);
-      stream?.getTracks().forEach((t) => t.stop());
-    };
-  }, [supported]);
-  return (
-    <Sheet title="Scan barcode" onClose={onClose}>
-      {supported ? (
-        <div className="scanner">
-          <video ref={video} muted playsInline aria-label="Camera preview" />
-          <span className="scanner-frame" aria-hidden="true" />
-          <p role="status">{message}</p>
-        </div>
-      ) : (
-        <p className="muted sheet-section">
-          This browser cannot scan with the camera. Use a USB or Bluetooth
-          scanner in the search box, or type the code below.
-        </p>
-      )}
-      <form
-        className="sheet-section inline-form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (manual.trim()) onDetect(manual.trim());
-        }}
-      >
-        <label>
-          Product code or barcode
-          <input
-            value={manual}
-            onChange={(e) => setManual(e.target.value)}
-            autoCapitalize="characters"
-            autoComplete="off"
-          />
-        </label>
-        <button className="btn btn-primary">Add</button>
-      </form>
-    </Sheet>
   );
 }
 

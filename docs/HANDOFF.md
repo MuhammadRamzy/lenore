@@ -1,5 +1,23 @@
 # Handoff
 
+## Claude · 2026-10-22 · Business report, landing and scroll fixes
+
+- **Business report (PDF):** Reports & GST → Business report. Month / quarter / financial year / custom; 11 sections (glance, sales, what sold, money, profit, GST, stock, quotations, checks, actions, notes + glossary + sign-off). Saved to an append-only archive (migration 0012, ADR 0008). Verified on real local data: 15 pages, ~110 KB, under 2 s.
+- **Fixes:** landing page (warranty band misaligned by its own margins; 8 categories now 4×2; tighter spacing); scrolling (a global `overscroll-behavior` rule trapped the wheel over sideways-scrolling rows; now scoped to real scroll panels, checked with wheel events on every page).
+- **Checks:** Prettier, typecheck, lint, 76 API tests (role matrix includes report routes), 6 browser tests, build dry run.
+- **Next:** security audit with Cloudflare's security-audit skill (in progress); owner to confirm GST/HSN and add purchase costs so profit becomes reliable.
+
+## Claude · 2026-10-22 · Real catalogue, POS/devices, audit, SEO
+
+- **Data (local only):** imported 308 Wetta products + 352 photos/posters read once from the live Wetta D1/R2 (read-only). GST 18% and HSN by category set with the owner's approval (8481 taps/valves, 7324 steel, 3924 plastic, 7013 glass): confirm with the accountant. Demo products deleted; `setup:local` now seeds samples only into an empty DB. Local login `owner` / `admin` (see ignored `creds.md`).
+- **Images:** uploads converted to WebP in the browser; 600 px thumbnails (`<key>.600`, `?w=600`) for grids. ADR 0007.
+- **POS:** product photos, redesigned tiles/bill lines, mobile sticky Pay bar, rebuilt return form, customer sheet order, Devices sheet (80 mm / A4 / direct USB, auto-print, test pages, drawer, scanner test), camera scanning, keyboard shortcuts (F1 list), re-sign-in overlay that keeps the bill.
+- **Workspace:** label generator (thermal 50×25/38×25/75×50 and A4 sheets, per-product qty, MRP+offer, fields), bulk GST & HSN tool, scan-to-find on products/inventory, camera stock count, readable Reports (2 columns, presets, number-gap ranges), salesperson landing screen, Settings page removed (WhatsApp lives in Access & pricing).
+- **Hardening:** role access matrix test (every admin/POS route × 5 roles), randomized bill-arithmetic test, crash boundary + load-failure screen, global 401 → sign-in, scroll containment, distinct Admin/Billing PWA icons, catalogue manifest scope `/catalogue`.
+- **Website/SEO:** removed preview labels and the 01/02/03 block, top-8 categories, warranty section (10y CP body · 2y spindle & head · 1y accessories), About logo showcase, richer titles/descriptions, served towns in LocalBusiness data, image sitemap.
+- **Checks:** typecheck, lint, Prettier, 73 API tests, 6 browser tests, build dry run, full crawl of every page × role × desktop/mobile (no crashes/overflow).
+- **Next:** owner to confirm GST/HSN, opening hours, map coordinates and Google Business Profile link (for SEO); run the thumbnail backfill after the production import; test direct ESC/POS on the shop printer; nothing committed or deployed.
+
 ## Claude · 2026-10-19 · Website controls and UPI QR
 
 - Migration 0010: `products.on_website`/`featured`, `website_categories`, `website_settings` (initialised from the previous rule: products, prices and stock shown only if the catalogue was public). Website visibility is now independent of catalogue access; anonymous catalogue readers get the website's view. Admin view: Workspace → Website (`src/server/website.ts`, `WebsitePanel`).

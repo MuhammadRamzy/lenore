@@ -693,3 +693,31 @@ export function ZReport({ shift }: { shift: ShiftSummary }) {
     </div>
   );
 }
+
+export type PrintMode = "receipt" | "a4" | "z" | "test-receipt" | "test-a4";
+
+/** Checks the printer, paper size and margins without printing a real bill. */
+export function TestPage({ a4 }: { a4: boolean }) {
+  return (
+    <div className={a4 ? "a4-invoice" : "receipt"}>
+      <div className="center">
+        <Mark height={a4 ? 56 : 40} />
+        <strong className="big">LENORE</strong>
+        <strong>PRINTER TEST · {a4 ? "A4" : "80 mm"}</strong>
+        <div>{new Date().toLocaleString("en-IN")}</div>
+      </div>
+      <div className="rule" />
+      <div className="row">
+        <span>Left edge</span>
+        <span>Right edge</span>
+      </div>
+      <div className="rule" />
+      <p>
+        Both edge labels and the full logo should be visible, with nothing cut
+        off. If the page is shrunk or split, set the paper size to{" "}
+        {a4 ? "A4" : "80 mm (or 72 mm) roll"} and margins to “Default” or “None”
+        in the print dialog.
+      </p>
+    </div>
+  );
+}

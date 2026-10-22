@@ -74,14 +74,14 @@ function headTags(c: AppContext, h: Head) {
   const image = h.image ?? `${base}/images/og-lenore.jpg`;
   const tags = [
     `<title>${escapeHtml(h.title)}</title>`,
-    `<meta name="description" content="${escapeHtml(h.description)}" />`,
+    `<meta name="description" content="${escapeHtml(clip(h.description))}" />`,
     `<meta name="robots" content="${h.noindex ? "noindex, nofollow" : "index, follow, max-image-preview:large"}" />`,
     `<link rel="canonical" href="${escapeHtml(url)}" />`,
     `<meta property="og:site_name" content="Lenore" />`,
     `<meta property="og:locale" content="en_IN" />`,
     `<meta property="og:type" content="${h.type ?? "website"}" />`,
     `<meta property="og:title" content="${escapeHtml(h.title)}" />`,
-    `<meta property="og:description" content="${escapeHtml(h.description)}" />`,
+    `<meta property="og:description" content="${escapeHtml(clip(h.description))}" />`,
     `<meta property="og:url" content="${escapeHtml(url)}" />`,
     `<meta property="og:image" content="${escapeHtml(image)}" />`,
     `<meta name="twitter:card" content="summary_large_image" />`,
@@ -113,6 +113,11 @@ async function htmlResponse(
 ) {
   let html = (await template(c)).replace(/<title>[\s\S]*?<\/title>/, "");
   html = html.replace(/<meta name="description"[^>]*>/, "");
+  // Installed apps bring their own icon and colour; never two of each.
+  if (head.app)
+    html = html
+      .replace(/<link rel="apple-touch-icon"[^>]*>\s*/, "")
+      .replace(/<meta name="theme-color"[^>]*>\s*/, "");
   html = html.replace("</head>", `    ${headTags(c, head)}\n  </head>`);
   if (body)
     html = html.replace(
@@ -222,6 +227,47 @@ async function siteData(c: AppContext, withProducts = true): Promise<SiteData> {
   };
 }
 
+/** "2 in 1 angle cock cubix grey PTMT" → "2 in 1 Angle Cock Cubix Grey PTMT" for titles. */
+export const titleCase = (text: string) =>
+  text.replace(/\b([a-z])([a-z]*)/g, (_, a: string, b: string) =>
+    ["in", "of", "and", "with", "for", "x"].includes(a + b)
+      ? a + b
+      : a.toUpperCase() + b,
+  );
+/** Search results show about 155 characters; cut at a word, never mid-word. */
+const clip = (text: string, max = 155) =>
+  text.length <= max
+    ? text
+    : `${text.slice(0, text.lastIndexOf(" ", max - 1))}…`;
+/** One honest sentence a search result can show, from the product's own facts. */
+export function productSummary(
+  p: Pick<
+    CatalogueProduct,
+    "name" | "code" | "category" | "description" | "pricePaise" | "availability"
+  >,
+) {
+  const price =
+    p.pricePaise !== null
+      ? ` MRP ₹${(p.pricePaise / 100).toLocaleString("en-IN")}.`
+      : "";
+  // Stock is null when the website hides it; then say nothing about it.
+  const stock =
+    p.availability === "Available"
+      ? " In stock"
+      : p.availability === "Low stock"
+        ? " Limited stock"
+        : p.availability
+          ? " Available to order"
+          : " Available";
+  const extra = p.description
+    ? ` ${p.description.replace(/\s+/g, " ").trim()}.`
+    : "";
+  return `${titleCase(p.name)} (${p.code}), ${p.category.toLowerCase()}.${price}${stock} at Lenore bath fittings, Kuttiady, Kozhikode.${extra}`.replace(
+    /\.\./g,
+    ".",
+  );
+}
+
 function businessLd(base: string) {
   return {
     "@context": "https://schema.org",
@@ -244,7 +290,17 @@ function businessLd(base: string) {
       addressRegion: business.address.region,
       addressCountry: business.address.country,
     },
-    areaServed: [business.address.district, business.address.region],
+    areaServed: [
+      ...business.serves.map((name) => ({ "@type": "City", name })),
+      {
+        "@type": "AdministrativeArea",
+        name: `${business.address.district} district`,
+      },
+      { "@type": "State", name: business.address.region },
+    ],
+    priceRange: "₹₹",
+    currenciesAccepted: "INR",
+    paymentAccepted: "Cash, UPI, Card, Bank transfer",
     contactPoint: {
       "@type": "ContactPoint",
       telephone: business.phone,
@@ -273,13 +329,20 @@ function productLd(base: string, p: CatalogueProduct) {
     sku: p.code,
     ...(p.barcode ? { gtin: p.barcode } : {}),
     category: p.category,
-    description: p.description || `${p.name} from Lenore, Kuttiady.`,
-    ...(p.imageUrl ? { image: `${base}${p.imageUrl}` } : {}),
+    description: productSummary(p),
+    ...(p.imageUrl || p.posterUrl
+      ? {
+          image: [p.imageUrl, p.posterUrl]
+            .filter(Boolean)
+            .map((u) => `${base}${u}`),
+        }
+      : {}),
     url: `${base}/products/${p.slug}`,
     ...(p.pricePaise !== null
       ? {
           offers: {
             "@type": "Offer",
+            itemCondition: "https://schema.org/NewCondition",
             priceCurrency: "INR",
             price: (p.pricePaise / 100).toFixed(2),
             ...(p.availability && {
@@ -406,8 +469,12 @@ routes.get("/collections/:slug", async (c) => {
       products,
     },
     {
-      title: `${category.name} in Kuttiady, Kozhikode | Lenore`,
-      description: `${category.name} from Lenore Trading LLP, Kuttiady. ${category.count} products. Visit the showroom or request prices and a quotation on WhatsApp.`,
+      title: `${titleCase(category.name)} in Kuttiady, Kozhikode | Lenore Bath Fittings`,
+      description:
+        `Buy ${category.name.toLowerCase()} in Kuttiady: ${category.count} models at Lenore bath fittings showroom, serving Vadakara, Nadapuram, Perambra and Kozhikode. See prices, then get a quotation on WhatsApp.`.slice(
+          0,
+          160,
+        ),
       path: `/collections/${category.slug}`,
       jsonLd: [
         breadcrumbLd(base, [
@@ -453,12 +520,8 @@ routes.get("/products/:slug", async (c) => {
     c,
     { ...common(d), kind: "product", product, related },
     {
-      title: `${product.name} (${product.code}) | Lenore Kuttiady`,
-      description:
-        `${product.name}, ${product.category.toLowerCase()} from Lenore, Kuttiady. ${product.description}`.slice(
-          0,
-          158,
-        ),
+      title: `${titleCase(product.name)} (${product.code})${product.pricePaise !== null ? ` – ₹${Math.round(product.pricePaise / 100).toLocaleString("en-IN")}` : ""} | Lenore Kuttiady`,
+      description: clip(productSummary(product)),
       path: `/products/${product.slug}`,
       type: "product",
       image: product.imageUrl ? `${base}${product.imageUrl}` : undefined,
@@ -617,20 +680,27 @@ routes.get("/sitemap.xml", async (c) => {
     (m, p) => (p.updatedAt > m ? p.updatedAt : m),
     "",
   );
-  const entry = (path: string, lastmod?: string) =>
-    `<url><loc>${escapeHtml(base + path)}</loc>${lastmod ? `<lastmod>${lastmod.slice(0, 10)}</lastmod>` : ""}</url>`;
+  const entry = (path: string, lastmod?: string, images: string[] = []) =>
+    `<url><loc>${escapeHtml(base + path)}</loc>${lastmod ? `<lastmod>${lastmod.slice(0, 10)}</lastmod>` : ""}${images.map((i) => `<image:image><image:loc>${escapeHtml(base + i)}</image:loc></image:image>`).join("")}</url>`;
   const urls = [
     entry("/", latest || undefined),
     entry("/collections", latest || undefined),
     entry("/about"),
     entry("/contact"),
     ...d.categories.map((x) => entry(`/collections/${x.slug}`)),
-    ...d.products.map((p) => entry(`/products/${p.slug}`, p.updatedAt)),
+    // Product photos and posters, so they can surface in Google Images.
+    ...d.products.map((p) =>
+      entry(
+        `/products/${p.slug}`,
+        p.updatedAt,
+        [p.imageUrl, p.posterUrl].filter((u): u is string => !!u),
+      ),
+    ),
   ];
   c.header("Content-Type", "application/xml; charset=utf-8");
   c.header("Cache-Control", "public, max-age=0, s-maxage=600");
   return c.body(
-    `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.join("")}</urlset>\n`,
+    `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">${urls.join("")}</urlset>\n`,
   );
 });
 

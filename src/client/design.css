@@ -467,17 +467,13 @@ body {
   background: var(--low-bg);
   color: var(--low);
 }
+:is(.site, .app, .sheet, .signin, .app-splash, .pos) .banner.ok {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
 :is(.site, .app, .sheet, .signin, .app-splash, .pos) .banner.error {
   background: var(--out-bg);
   color: var(--out);
-}
-.demo-ribbon {
-  margin: 0;
-  padding: 6px var(--gutter);
-  background: var(--surface);
-  color: var(--muted);
-  font-size: 11.5px;
-  text-align: center;
 }
 .skip-link {
   position: absolute;
@@ -557,7 +553,7 @@ body {
   display: none;
 }
 .section {
-  padding-block: clamp(56px, 8vw, 104px);
+  padding-block: clamp(36px, 5vw, 64px);
 }
 .section.page-top {
   padding-top: clamp(28px, 4vw, 48px);
@@ -667,6 +663,12 @@ body {
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
   gap: 20px;
 }
+/* Home shows exactly eight: two full rows of four. */
+@media (min-width: 900px) {
+  .home-categories .category-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
 .category-tile {
   display: grid;
   gap: 6px;
@@ -734,25 +736,6 @@ body {
   margin-top: 6px;
   color: var(--ink-2);
 }
-.promise {
-  border-top: 1px solid var(--line);
-}
-.promise-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: clamp(24px, 4vw, 56px);
-}
-.promise-index {
-  display: block;
-  margin-bottom: 18px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--accent);
-}
-.promise p {
-  margin-top: 10px;
-  color: var(--ink-2);
-}
 .visit {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -781,6 +764,211 @@ body {
   margin-top: 20px;
   font-style: normal;
   color: #d9d6d0;
+}
+.brand-showcase {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr 1.2fr;
+  gap: 20px;
+  align-items: stretch;
+  border-top: 1px solid var(--line);
+}
+.brand-showcase-copy {
+  align-self: center;
+}
+.brand-showcase-copy p:last-child {
+  margin-top: 12px;
+  color: var(--ink-2);
+}
+.brand-panel {
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: clamp(28px, 5vw, 56px);
+  border-radius: 24px;
+  aspect-ratio: 4 / 3;
+}
+.brand-panel.light {
+  background: #f6f1e8;
+}
+.brand-panel.dark {
+  background: var(--ink);
+}
+.brand-panel img {
+  width: min(100%, 260px);
+  height: auto;
+}
+@media (max-width: 900px) {
+  .brand-showcase {
+    grid-template-columns: 1fr 1fr;
+  }
+  .brand-showcase-copy {
+    grid-column: 1 / -1;
+  }
+}
+/* Warranty: dark band with the longest cover raised in the middle. */
+.warranty {
+  padding: clamp(40px, 6vw, 72px) clamp(20px, 4vw, 56px);
+  background: var(--ink);
+  color: #fff;
+  border-radius: 28px;
+}
+.warranty-head {
+  max-width: 40rem;
+  margin: 0 auto clamp(28px, 4vw, 44px);
+  text-align: center;
+}
+.warranty-head .eyebrow {
+  color: #d9b48a;
+}
+.warranty-head h2 {
+  margin-top: 10px;
+  color: #fff;
+}
+.warranty-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: center;
+  gap: clamp(14px, 2.5vw, 28px);
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 0;
+  list-style: none;
+}
+.warranty-grid li {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: clamp(24px, 3vw, 36px) 16px;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 20px;
+  background: rgb(255 255 255 / 0.04);
+  text-align: center;
+}
+.warranty-grid li.top {
+  padding-block: clamp(32px, 4vw, 48px);
+  border-color: rgb(217 180 138 / 0.45);
+  background: rgb(217 180 138 / 0.08);
+}
+.warranty-flag {
+  position: absolute;
+  top: 0;
+  translate: 0 -50%;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: #d9b48a;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.warranty-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 8px;
+  border-radius: 50%;
+  border: 1px solid rgb(255 255 255 / 0.18);
+  color: #d9d6d0;
+}
+.top .warranty-icon {
+  width: 68px;
+  height: 68px;
+  border-color: #d9b48a;
+  background: linear-gradient(160deg, #c99a63, #7a4e26);
+  color: #fff;
+}
+.warranty-years {
+  margin: 0;
+  color: #b9b4ab;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.warranty-years b {
+  margin-right: 4px;
+  color: #fff;
+  font-size: clamp(36px, 5vw, 52px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-transform: none;
+}
+.top .warranty-years b {
+  color: #e7c18f;
+  font-size: clamp(44px, 6vw, 68px);
+}
+.warranty-part {
+  margin: 0;
+  color: #d9d6d0;
+  font-size: 14.5px;
+}
+.warranty-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+}
+@media (max-width: 700px) {
+  .warranty {
+    border-radius: 20px;
+  }
+  .warranty-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  /* Phones: compact rows instead of tall cards. */
+  .warranty-grid li,
+  .warranty-grid li.top {
+    grid-template-columns: auto 1fr;
+    grid-template-areas: "icon years" "icon part";
+    justify-items: start;
+    column-gap: 16px;
+    row-gap: 0;
+    padding: 16px 18px;
+    text-align: left;
+  }
+  .warranty-grid li.top {
+    padding-top: 22px;
+  }
+  .warranty-icon,
+  .top .warranty-icon {
+    grid-area: icon;
+    width: 48px;
+    height: 48px;
+    margin: 0;
+  }
+  .warranty-years {
+    grid-area: years;
+  }
+  .warranty-part {
+    grid-area: part;
+  }
+  .warranty-years b,
+  .top .warranty-years b {
+    font-size: 30px;
+  }
+  .warranty-flag {
+    left: 18px;
+  }
+  /* Phones: longest cover first. */
+  .warranty-grid li.top {
+    order: -1;
+  }
+}
+.visit-serves {
+  margin-top: 16px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: #b9b4ab;
+}
+.section-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 28px;
 }
 .visit-card address strong {
   color: #fff;
@@ -2046,8 +2234,7 @@ body {
     grid-template-rows: auto auto 1fr;
   }
   .app.with-aside > .app-bar,
-  .app.with-aside > .banner,
-  .app.with-aside > .demo-ribbon {
+  .app.with-aside > .banner {
     grid-column: 1 / -1;
   }
   .browse {
@@ -2184,9 +2371,6 @@ body {
   .product-card h3 {
     font-size: 14.5px;
   }
-  .promise-grid {
-    grid-template-columns: 1fr;
-  }
   .section-head {
     align-items: start;
     flex-direction: column;
@@ -2296,7 +2480,6 @@ body {
   .site-footer,
   .action-bar,
   .no-print,
-  .demo-ribbon,
   .skip-link {
     display: none !important;
   }
@@ -2310,4 +2493,37 @@ body {
     border: 0;
     padding: 0;
   }
+}
+
+/* Panels that scroll vertically on their own keep the scroll to themselves.
+   Only these: a blanket rule traps the wheel over sideways-scrolling rows. */
+.sheet,
+.sheet-body,
+.modal-root,
+.editor-panel,
+.workspace .sidebar,
+.pos-lines,
+.pos-reauth {
+  overscroll-behavior-y: contain;
+}
+
+.app-crash {
+  display: grid;
+  gap: 14px;
+  max-width: 28rem;
+  margin: 18vh auto;
+  padding: 0 var(--gutter);
+  text-align: center;
+  color: var(--ink);
+}
+.app-crash h1 {
+  margin: 0;
+  font-size: 24px;
+}
+.app-crash p {
+  margin: 0;
+  color: var(--muted);
+}
+.app-crash .btn {
+  justify-self: center;
 }

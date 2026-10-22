@@ -477,3 +477,24 @@ export const purchaseReturnInput = z
     refundReference: z.string().trim().max(120),
   })
   .strict();
+
+/** 26-27/2, 26-27/3, 26-27/4 → "26-27/2–4": gaps read as a few ranges, not a wall. */
+export function numberRanges(gaps: { fy: string; seq: number }[]) {
+  const sorted = [...gaps].sort((a, b) =>
+    a.fy === b.fy ? a.seq - b.seq : a.fy.localeCompare(b.fy),
+  );
+  const out: string[] = [];
+  for (let i = 0; i < sorted.length;) {
+    let j = i;
+    while (
+      j + 1 < sorted.length &&
+      sorted[j + 1].fy === sorted[i].fy &&
+      sorted[j + 1].seq === sorted[j].seq + 1
+    )
+      j++;
+    const { fy, seq } = sorted[i];
+    out.push(j > i ? `${fy}/${seq}–${sorted[j].seq}` : `${fy}/${seq}`);
+    i = j + 1;
+  }
+  return out;
+}

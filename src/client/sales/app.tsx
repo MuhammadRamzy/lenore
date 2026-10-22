@@ -264,11 +264,6 @@ function SalesWorkspace({
           back online.
         </p>
       )}
-      {config.demo && (
-        <p className="demo-ribbon">
-          Preview · Sample products and images are illustrative
-        </p>
-      )}
 
       <main className="app-main" id="main">
         {route.tab === "browse" && (
@@ -667,7 +662,12 @@ function Account({
             <button
               type="button"
               className="btn btn-ghost"
-              onClick={() => install.prompt().then(() => setInstall(null))}
+              onClick={() =>
+                install
+                  .prompt()
+                  .catch(() => undefined)
+                  .finally(() => setInstall(null))
+              }
             >
               <Download size={18} aria-hidden="true" /> Install the app
             </button>

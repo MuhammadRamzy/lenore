@@ -1,4 +1,4 @@
-import { StrictMode } from "react";
+import { Component, StrictMode, type ReactNode } from "react";
 import { createRoot, hydrateRoot } from "react-dom/client";
 import "@fontsource/manrope/latin-400.css";
 import "@fontsource/manrope/latin-500.css";
@@ -20,29 +20,54 @@ if (data) {
       <Site page={page} />
     </StrictMode>,
   );
-} else if (location.pathname.startsWith("/pos")) {
-  void import("./pos/app").then(({ PosApp }) =>
-    createRoot(root).render(
-      <StrictMode>
-        <PosApp />
-      </StrictMode>,
-    ),
-  );
-} else if (location.pathname.startsWith("/manage")) {
-  void import("./management").then(({ Management }) =>
-    createRoot(root).render(
-      <StrictMode>
-        <Management />
-      </StrictMode>,
-    ),
-  );
 } else {
-  void import("./sales/app").then(({ SalesApp }) =>
-    createRoot(root).render(
-      <StrictMode>
-        <SalesApp />
-      </StrictMode>,
-    ),
+  const app = location.pathname.startsWith("/pos")
+    ? import("./pos/app").then((m) => <m.PosApp />)
+    : location.pathname.startsWith("/manage")
+      ? import("./management").then((m) => <m.Management />)
+      : import("./sales/app").then((m) => <m.SalesApp />);
+  const view = createRoot(root);
+  app
+    .then((node) =>
+      view.render(
+        <StrictMode>
+          <Boundary>{node}</Boundary>
+        </StrictMode>,
+      ),
+    )
+    // Offline on first visit, or a stale page after an update.
+    .catch(() => view.render(<Crash loadFailed />));
+}
+
+/** Last line of defence: a screen error never leaves a blank page. */
+class Boundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(error: unknown) {
+    console.error(error);
+  }
+  render() {
+    return this.state.failed ? <Crash /> : this.props.children;
+  }
+}
+function Crash({ loadFailed = false }: { loadFailed?: boolean }) {
+  const pos = location.pathname.startsWith("/pos");
+  return (
+    <main className="app-crash" role="alert">
+      <h1>{loadFailed ? "Lenore could not load" : "Something went wrong"}</h1>
+      <p>
+        {loadFailed
+          ? "Check the internet connection, then try again."
+          : "This screen hit a problem. Reloading usually fixes it."}
+        {pos &&
+          " Bills already saved on this counter, including offline ones, are kept."}
+      </p>
+      <button className="btn btn-primary" onClick={() => location.reload()}>
+        Reload
+      </button>
+    </main>
   );
 }
 // Installable app shell for the catalogue and workspace (secure contexts only).

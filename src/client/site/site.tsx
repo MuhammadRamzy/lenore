@@ -12,6 +12,10 @@ import {
   X,
   Mail,
   Check,
+  Layers,
+  ShieldCheck,
+  Settings2,
+  BadgeCheck,
 } from "lucide-react";
 import { business, addressLine } from "../../business";
 import { categorySlug, money, type CatalogueProduct } from "../../shared";
@@ -374,6 +378,13 @@ function Home({ page }: { page: Extract<SitePage, { kind: "home" }> }) {
             </a>
           </div>
           <ul className="hero-facts">
+            {page.categories.length > 0 && (
+              <li>
+                <Layers size={16} aria-hidden="true" />{" "}
+                {page.categories.reduce((n, c) => n + c.count, 0)} products in{" "}
+                {page.categories.length} ranges
+              </li>
+            )}
             <li>
               <MapPin size={16} aria-hidden="true" /> Showroom in Kuttiady
             </li>
@@ -387,12 +398,11 @@ function Home({ page }: { page: Extract<SitePage, { kind: "home" }> }) {
             src="/images/mixer-cutout-960.webp"
             srcSet="/images/mixer-cutout-640.webp 640w, /images/mixer-cutout-960.webp 960w"
             sizes="(max-width: 900px) 80vw, 45vw"
-            alt="Chrome single lever basin mixer, illustrative product study"
+            alt="Chrome single lever basin mixer"
             width={960}
             height={960}
             fetchPriority="high"
           />
-          <figcaption>Illustrative product study</figcaption>
         </figure>
       </section>
 
@@ -407,7 +417,23 @@ function Home({ page }: { page: Extract<SitePage, { kind: "home" }> }) {
               All collections <ArrowRight size={16} aria-hidden="true" />
             </a>
           </div>
-          <CategoryGrid categories={page.categories} demo={page.demo} />
+          {/* The biggest ranges first; the full list is one tap away. */}
+          <div className="home-categories">
+            <CategoryGrid
+              categories={[...page.categories]
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 8)}
+              demo={page.demo}
+            />
+          </div>
+          {page.categories.length > 8 && (
+            <p className="section-more">
+              <a className="btn btn-ghost" href="/collections">
+                View all {page.categories.length} collections{" "}
+                <ArrowRight size={16} aria-hidden="true" />
+              </a>
+            </p>
+          )}
         </section>
       )}
 
@@ -427,40 +453,59 @@ function Home({ page }: { page: Extract<SitePage, { kind: "home" }> }) {
         </section>
       )}
 
-      <section className="section promise" aria-labelledby="promise-title">
-        <h2 id="promise-title" className="visually-hidden">
-          Why buy from Lenore
-        </h2>
-        <div className="promise-grid">
-          <div>
-            <span className="promise-index">01</span>
-            <h3>See it in person</h3>
-            <p>
-              Visit our Kuttiady showroom near Mother Clinic to see finishes and
-              compare products side by side.
-            </p>
-          </div>
-          <div>
-            <span className="promise-index">02</span>
-            <h3>Clear, written quotations</h3>
-            <p>
-              Every quotation lists product codes, quantities, MRP and totals,
-              shared on WhatsApp or as a PDF.
-            </p>
-          </div>
-          <div>
-            <span className="promise-index">03</span>
-            <h3>A registered local business</h3>
-            <p>
-              {business.legalName}, GSTIN {business.gstin}. Proper invoices for
-              homes, builders and projects.
-            </p>
-          </div>
-        </div>
-      </section>
-
+      <Warranty />
       <VisitSection page={page} />
     </>
+  );
+}
+
+/** Warranty terms, shared by the home, about and product pages. */
+function Warranty({ compact = false }: { compact?: boolean }) {
+  if (compact)
+    return (
+      <p className="warranty-line">
+        <ShieldCheck size={16} aria-hidden="true" /> Warranty:{" "}
+        {business.warranty
+          .map(
+            (w) =>
+              `${w.years} ${w.years === 1 ? "year" : "years"} ${w.part.replace(/^[A-Z][a-z]/, (m) => m.toLowerCase())}`,
+          )
+          .join(" · ")}
+      </p>
+    );
+  // Longest cover in the middle, the way it reads on the shop's card.
+  const [ten, ...rest] = business.warranty;
+  return (
+    <section className="section" aria-labelledby="warranty-title">
+      <div className="warranty">
+        <div className="warranty-head">
+          <p className="eyebrow">Warranty</p>
+          <h2 id="warranty-title">Fittings built to last, and backed for it</h2>
+        </div>
+        <ul className="warranty-grid">
+          {[rest[0], ten, rest[1]].map((w) => (
+            <li key={w.part} className={w.highlight ? "top" : undefined}>
+              {w.highlight && (
+                <span className="warranty-flag">Longest cover</span>
+              )}
+              <span className="warranty-icon" aria-hidden="true">
+                {w.highlight ? (
+                  <ShieldCheck size={26} />
+                ) : w.years === 2 ? (
+                  <Settings2 size={24} />
+                ) : (
+                  <BadgeCheck size={24} />
+                )}
+              </span>
+              <p className="warranty-years">
+                <b>{w.years}</b> {w.years === 1 ? "year" : "years"}
+              </p>
+              <p className="warranty-part">{w.part}</p>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
   );
 }
 
@@ -474,6 +519,11 @@ function VisitSection({ page }: { page: SitePage }) {
           <strong>{business.legalName}</strong>
           <span>{addressLine}</span>
         </address>
+        <p className="visit-serves">
+          Serving {business.serves.slice(0, -1).join(", ")} and across{" "}
+          {business.address.district} district. GST invoices for homes, builders
+          and contractors.
+        </p>
         <div className="visit-actions">
           <a
             className="btn btn-primary"
@@ -712,6 +762,7 @@ function ProductPage({
             </p>
             <StatusBadge product={p} />
             {p.description && <p className="description">{p.description}</p>}
+            <Warranty compact />
             <div className="product-detail-actions">
               <a
                 className="btn btn-primary btn-lg"
@@ -784,6 +835,36 @@ function About({ page }: { page: SitePage }) {
           </div>
         </dl>
       </section>
+      <section className="section brand-showcase" aria-labelledby="mark-title">
+        <div className="brand-showcase-copy">
+          <p className="eyebrow">Our mark</p>
+          <h2 id="mark-title">The Lenore name and L</h2>
+          <p>
+            You will find this mark on our showroom, our bills and every
+            quotation we send, so you always know it comes from{" "}
+            {business.legalName}.
+          </p>
+        </div>
+        <figure className="brand-panel light">
+          <img
+            src="/images/lenore-stacked-full-colour.svg"
+            alt="Lenore logo"
+            width={2564}
+            height={1886}
+            loading="lazy"
+          />
+        </figure>
+        <figure className="brand-panel dark">
+          <img
+            src="/images/lenore-stacked-reversed.svg"
+            alt=""
+            width={2564}
+            height={1886}
+            loading="lazy"
+          />
+        </figure>
+      </section>
+      <Warranty />
       <VisitSection page={page} />
     </>
   );
@@ -955,11 +1036,6 @@ export function Site({ page }: { page: SitePage }) {
       <a className="skip-link" href="#main">
         Skip to content
       </a>
-      {page.demo && (
-        <p className="demo-ribbon">
-          Preview · Sample products and images are illustrative
-        </p>
-      )}
       <Header page={page} />
       <main id="main">{body}</main>
       <Footer />

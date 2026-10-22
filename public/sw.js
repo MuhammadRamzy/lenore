@@ -1,6 +1,6 @@
 // Lenore app shell cache. Never caches API responses, so signed-in data and
 // revoked access are always decided by the server.
-const CACHE = "lenore-shell-v2";
+const CACHE = "lenore-shell-v3";
 const SHELL = ["/catalogue", "/manage", "/pos", "/manifest.webmanifest", "/manage.webmanifest", "/pos.webmanifest"];
 
 self.addEventListener("install", (event) => {

@@ -10,6 +10,7 @@ import {
   Printer,
   Receipt as ReceiptIcon,
   RefreshCw,
+  ScanBarcode,
   Search,
   Trash2,
   Undo2,
@@ -35,12 +36,31 @@ import {
 import { money, type SessionInfo } from "../../shared";
 import "./pos.css";
 import { Mark } from "../site/site";
-import { whatsappLink, withCountry } from "../links";
+import {
+  productImage,
+  thumb as thumbUrl,
+  whatsappLink,
+  withCountry,
+} from "../links";
 import { Sheet } from "../sales/ui";
-import { PrintArea, Receipt, TaxInvoice, ZReport } from "./print";
+import { Scanner } from "../scanner";
+import {
+  PrintArea,
+  Receipt,
+  TaxInvoice,
+  TestPage,
+  ZReport,
+  type PrintMode,
+} from "./print";
 import { UpiQr } from "./qr";
 import {
   connectPrinter,
+  disconnectPrinter,
+  openDrawer,
+  printerPrefs,
+  restorePrinter,
+  savePrinterPrefs,
+  testPrint,
   printEscPos,
   printerConnected,
   serialSupported,
@@ -81,9 +101,16 @@ export function PosApp() {
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [boot, setBoot] = useState<Bootstrap | null>(null);
   const [error, setError] = useState("");
+  const [expired, setExpired] = useState(false);
+  useEffect(() => {
+    const out = () => setExpired(true);
+    window.addEventListener("lenore:signed-out", out);
+    return () => window.removeEventListener("lenore:signed-out", out);
+  }, []);
   const load = useCallback(async () => {
     try {
       const s = await api<SessionInfo>("/session");
+      setExpired(false);
       setSession(s);
       if (!s.posAccess) return;
       const b = await api<Bootstrap>(`/pos/bootstrap?device=${deviceId()}`);
@@ -142,7 +169,17 @@ export function PosApp() {
     );
   if (!boot.shift || boot.shift.status !== "open")
     return <OpenShift boot={boot} onOpened={load} />;
-  return <Counter boot={boot} reload={load} />;
+  return (
+    <>
+      <Counter boot={boot} reload={load} />
+      {expired && (
+        // Signed out mid-shift: sign in on top, the bill underneath stays.
+        <div className="pos-reauth">
+          <PosSignIn denied={false} onDone={load} />
+        </div>
+      )}
+    </>
+  );
 }
 
 function PosSignIn({
@@ -273,6 +310,27 @@ function Counter({
   reload: () => Promise<void>;
 }) {
   const products = boot.products;
+  const thumb = (p: PosProduct, size: number) => {
+    const img = productImage(
+      { ...p, posterUrl: p.posterUrl ?? null },
+      !!boot.demo,
+    );
+    return img ? (
+      <img
+        className="pos-thumb"
+        src={thumbUrl(img.src)}
+        alt=""
+        width={size}
+        height={size}
+        loading="lazy"
+        decoding="async"
+        // Offline or no access: fall back to the empty tile.
+        onError={(e) => (e.currentTarget.style.visibility = "hidden")}
+      />
+    ) : (
+      <span className="pos-thumb" aria-hidden="true" />
+    );
+  };
   const byId = useMemo(
     () => new Map(products.map((p) => [p.id, p])),
     [products],
@@ -288,7 +346,16 @@ function Counter({
   } | null>(null);
   const [notes, setNotes] = useState("");
   const [sheet, setSheet] = useState<
-    null | "pay" | "customer" | "cash" | "close" | "bills" | "expense" | "quote"
+    | null
+    | "pay"
+    | "customer"
+    | "cash"
+    | "close"
+    | "bills"
+    | "expense"
+    | "quote"
+    | "devices"
+    | "keys"
   >(null);
   const [done, setDone] = useState<{
     invoice: Invoice;
@@ -299,9 +366,38 @@ function Counter({
   const [online, setOnline] = useState(() => navigator.onLine);
   const [queued, setQueued] = useState(() => readQueue().length);
   const [reserved, setReserved] = useState(() => reservedCount());
-  const [printMode, setPrintMode] = useState<"receipt" | "a4" | "z">("receipt");
+  const [printMode, setPrintMode] = useState<PrintMode>("receipt");
   const search = useRef<HTMLInputElement>(null);
+  const billRef = useRef<HTMLElement>(null);
+  const [camera, setCamera] = useState(false);
+  const [lastScan, setLastScan] = useState("");
   const policy = boot.policy;
+  const [printer, setPrinter] = useState(printerConnected);
+  useEffect(() => {
+    restorePrinter()
+      .then(setPrinter)
+      .catch(() => undefined);
+  }, []);
+  // A USB scanner types like a keyboard: whatever has focus, send its
+  // keystrokes to the search box so a scan always lands there.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (
+        sheet ||
+        camera ||
+        e.key.length !== 1 ||
+        e.ctrlKey ||
+        e.metaKey ||
+        e.altKey ||
+        t.closest("input, textarea, select, [contenteditable]")
+      )
+        return;
+      search.current?.focus({ preventScroll: true });
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [sheet, camera]);
 
   useEffect(() => {
     if (!toast) return;
@@ -428,6 +524,56 @@ function Counter({
     search.current?.focus();
   }
 
+  const canPay = lines.length > 0 && !problems.length && bill.total > 0;
+  // Counter shortcuts. Function keys work even while typing in the search box.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (done) return;
+      const k = e.key;
+      const typing = (e.target as HTMLElement).closest(
+        "input, textarea, select",
+      );
+      const go = (s: typeof sheet) => {
+        e.preventDefault();
+        setSheet(s);
+      };
+      if (camera) return;
+      if (k === "F1") return go("keys");
+      if (sheet) return;
+      const last = lines[lines.length - 1];
+      if (k === "F2" || (k === "/" && !typing)) {
+        e.preventDefault();
+        search.current?.focus();
+        search.current?.select();
+      } else if (k === "F3") go("customer");
+      else if (k === "F4") {
+        e.preventDefault();
+        if (canPay) setSheet("pay");
+      } else if (k === "F6") go("bills");
+      else if (k === "F7") go("cash");
+      else if (k === "F8") go("expense");
+      else if (k === "F9") go("devices");
+      else if (e.altKey && last && (k === "ArrowUp" || k === "ArrowDown")) {
+        e.preventDefault();
+        const qty = last.qty + (k === "ArrowUp" ? 1 : -1);
+        setLines((ls) =>
+          qty < 1
+            ? ls.slice(0, -1)
+            : ls.map((l) => (l === last ? { ...l, qty } : l)),
+        );
+      } else if (e.altKey && last && k === "Delete") {
+        e.preventDefault();
+        setLines((ls) => ls.slice(0, -1));
+      } else if (e.ctrlKey && k === "Delete" && lines.length) {
+        e.preventDefault();
+        reset();
+        setToast("Bill cleared");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   async function complete(payments: Payment[]) {
     const date = new Date().toLocaleDateString("en-CA", {
       timeZone: "Asia/Kolkata",
@@ -462,6 +608,7 @@ function Counter({
         "POST",
       );
       setDone({ invoice: r.invoice, pending: false });
+      void autoPrint(r.invoice);
       api<ShiftSummary>(`/pos/shifts/${shift.id}`)
         .then(setShift)
         .catch(() => undefined);
@@ -471,7 +618,9 @@ function Counter({
       const offline = { ...payload, offline: true };
       writeQueue([...readQueue(), { payload: offline, number: printed }]);
       setQueued(readQueue().length);
-      setDone({ invoice: localInvoice(offline, printed), pending: true });
+      const local = localInvoice(offline, printed);
+      setDone({ invoice: local, pending: true });
+      void autoPrint(local);
     }
     reset();
   }
@@ -532,10 +681,28 @@ function Counter({
       creditNotes: [],
     };
   }
-  const print = (mode: "receipt" | "a4" | "z") => {
+  const print = (mode: PrintMode) => {
     setPrintMode(mode);
-    setTimeout(() => window.print(), 50);
+    setTimeout(() => window.print(), 150);
   };
+  /** Prints a finished bill in the counter's chosen format, if auto-print is on. */
+  async function autoPrint(invoice: Invoice) {
+    const prefs = printerPrefs();
+    if (!prefs.autoPrint) return;
+    if (prefs.billFormat !== "direct") return print(prefs.billFormat);
+    try {
+      if (!printerConnected() && !(await restorePrinter()))
+        throw new Error("Receipt printer not connected. Open Devices.");
+      await printEscPos(
+        invoice,
+        boot.settings.receiptFooter,
+        invoice.payments.some((p) => p.method === "cash"),
+        boot.settings.payment,
+      );
+    } catch (e) {
+      setToast(errorMessage(e));
+    }
+  }
 
   return (
     <div className="pos">
@@ -558,6 +725,19 @@ function Counter({
           {queued > 0 && ` · ${queued} to sync`}
         </span>
         <nav className="pos-actions" aria-label="Counter actions">
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setSheet("devices")}
+            title={printer ? "Receipt printer connected" : "No receipt printer"}
+          >
+            <Printer size={16} aria-hidden="true" /> Devices
+            <span
+              className={`pos-dot${printer ? " on" : ""}`}
+              aria-label={
+                printer ? "printer connected" : "printer not connected"
+              }
+            />
+          </button>
           <button
             className="btn btn-ghost btn-sm"
             onClick={() => setSheet("bills")}
@@ -603,6 +783,9 @@ function Counter({
               } else if (results.length === 1) {
                 add(results[0]);
                 setQuery("");
+              } else if (v && !results.length) {
+                setToast(`No product with barcode or code ${query.trim()}`);
+                setQuery("");
               }
             }}
           >
@@ -616,6 +799,15 @@ function Counter({
               aria-label="Scan or search products"
               autoComplete="off"
             />
+            <button
+              type="button"
+              className="pos-cam"
+              aria-label="Scan with camera"
+              title="Scan with camera"
+              onClick={() => setCamera(true)}
+            >
+              <ScanBarcode size={20} aria-hidden="true" />
+            </button>
           </form>
           <nav className="chip-row" aria-label="Categories">
             <button
@@ -641,31 +833,42 @@ function Counter({
               <li key={p.id}>
                 <button
                   onClick={() => add(p)}
-                  className={p.gstRateBp === null ? "warn" : ""}
+                  title={p.name}
+                  className={`pos-tile${p.stock <= 0 ? " out" : ""}`}
                 >
-                  <span className="pos-code">
+                  <span className="pos-media">
+                    {thumb(p, 200)}
+                    {p.stock <= 0 && (
+                      <span className="pos-badge">Out of stock</span>
+                    )}
+                  </span>
+                  <span className="pos-name">{p.name}</span>
+                  <span className="pos-meta">
                     {p.code}
                     {p.bin && ` · ${p.bin}`}
+                    {p.gstRateBp === null ? (
+                      <em className="pos-flag">No GST</em>
+                    ) : (
+                      ` · GST ${p.gstRateBp / 100}%`
+                    )}
                   </span>
-                  <strong>{p.name}</strong>
-                  <span className="pos-price">
-                    {p.pricePaise === null
-                      ? "Price on request"
-                      : money(p.pricePaise)}
+                  <span className="pos-foot">
+                    <b className="pos-price">
+                      {p.pricePaise === null
+                        ? "On request"
+                        : money(p.pricePaise)}
+                    </b>
+                    <span className={`pos-stock${p.stock <= 0 ? " out" : ""}`}>
+                      {p.stock} {p.unit}
+                    </span>
                   </span>
-                  <span className={`pos-stock ${p.stock <= 0 ? "out" : ""}`}>
-                    {p.stock} {p.unit}
-                  </span>
-                  {p.gstRateBp === null && (
-                    <span className="pos-flag">No GST rate</span>
-                  )}
                 </button>
               </li>
             ))}
           </ul>
         </section>
 
-        <section className="pos-bill" aria-label="Current bill">
+        <section className="pos-bill" aria-label="Current bill" ref={billRef}>
           <button className="pos-customer" onClick={() => setSheet("customer")}>
             <UserRound size={18} aria-hidden="true" />
             <span>
@@ -702,7 +905,19 @@ function Counter({
               return (
                 <li key={l.productId}>
                   <div className="pos-line-head">
-                    <strong>{p.name}</strong>
+                    {thumb(p, 40)}
+                    <span className="pos-line-title">
+                      <strong>{p.name}</strong>
+                      <span className="muted">
+                        {p.code} · GST {(p.gstRateBp ?? 0) / 100}% ·{" "}
+                        <span className={p.stock < l.qty ? "short" : ""}>
+                          stock {p.stock}
+                        </span>
+                      </span>
+                    </span>
+                    <strong className="pos-line-total">
+                      {money(priced?.total ?? 0)}
+                    </strong>
                     <button
                       className="icon-btn"
                       aria-label={`Remove ${p.code}`}
@@ -715,9 +930,6 @@ function Counter({
                       <Trash2 size={16} />
                     </button>
                   </div>
-                  <span className="muted">
-                    {p.code} · GST {(p.gstRateBp ?? 0) / 100}% · stock {p.stock}
-                  </span>
                   <div className="pos-line-controls">
                     <div
                       className="stepper compact"
@@ -763,6 +975,10 @@ function Counter({
                         aria-label={`Rate for ${p.code}`}
                         defaultValue={paiseInput(l.rate)}
                         key={`${l.productId}-${l.rate}`}
+                        onFocus={(e) => e.currentTarget.select()}
+                        onKeyDown={(e) =>
+                          e.key === "Enter" && e.currentTarget.blur()
+                        }
                         onBlur={(e) =>
                           update({
                             rate: rupeesToPaise(e.target.value || "0"),
@@ -772,12 +988,16 @@ function Counter({
                       />
                     </label>
                     <label className="mini-field">
-                      <span>Disc ₹</span>
+                      <span>Disc</span>
                       <input
                         inputMode="decimal"
                         aria-label={`Discount for ${p.code}`}
                         defaultValue={l.discount ? paiseInput(l.discount) : ""}
                         key={`${l.productId}-d-${l.discount}`}
+                        onFocus={(e) => e.currentTarget.select()}
+                        onKeyDown={(e) =>
+                          e.key === "Enter" && e.currentTarget.blur()
+                        }
                         onBlur={(e) =>
                           update({
                             discount: Math.max(
@@ -788,9 +1008,6 @@ function Counter({
                         }
                       />
                     </label>
-                    <strong className="pos-line-total">
-                      {money(priced?.total ?? 0)}
-                    </strong>
                   </div>
                 </li>
               );
@@ -855,6 +1072,29 @@ function Counter({
           </div>
         </section>
       </div>
+      {lines.length > 0 && (
+        // Phones: the bill sits below the products, so keep the total in reach.
+        <div className="pos-mobile-bar">
+          <button
+            className="pos-mobile-sum"
+            onClick={() =>
+              billRef.current?.scrollIntoView({ behavior: "smooth" })
+            }
+          >
+            <small>
+              {lines.reduce((n, l) => n + l.qty, 0)} items · view bill
+            </small>
+            <b>{money(bill.total)}</b>
+          </button>
+          <button
+            className="btn btn-primary"
+            disabled={!!problems.length || bill.total <= 0}
+            onClick={() => setSheet("pay")}
+          >
+            Pay
+          </button>
+        </div>
+      )}
 
       {sheet === "pay" && (
         <PaySheet
@@ -930,6 +1170,57 @@ function Counter({
           }}
         />
       )}
+      {camera && (
+        <Scanner
+          continuous
+          title="Scan items"
+          status={lastScan || undefined}
+          onDetect={(raw) => {
+            const code = raw.trim().toLowerCase();
+            const p = products.find(
+              (x) =>
+                (x.barcode && x.barcode.toLowerCase() === code) ||
+                x.code.toLowerCase() === code,
+            );
+            if (!p) {
+              setLastScan(`${raw}: no product has this barcode or code`);
+              return false;
+            }
+            add(p);
+            setLastScan(`Added ${p.code} ${p.name}`);
+            return true;
+          }}
+          onClose={() => {
+            setCamera(false);
+            setLastScan("");
+          }}
+        />
+      )}
+      {sheet === "keys" && (
+        <Sheet title="Keyboard shortcuts" onClose={() => setSheet(null)}>
+          <dl className="keys">
+            {SHORTCUTS.map(([key, what]) => (
+              <div key={key}>
+                <dt>
+                  <kbd>{key}</kbd>
+                </dt>
+                <dd>{what}</dd>
+              </div>
+            ))}
+          </dl>
+        </Sheet>
+      )}
+      {sheet === "devices" && (
+        <DevicesSheet
+          products={products}
+          onTestPrint={print}
+          onChange={setPrinter}
+          onClose={() => {
+            setSheet(null);
+            search.current?.focus({ preventScroll: true });
+          }}
+        />
+      )}
       {sheet === "cash" && (
         <CashSheet
           shift={shift}
@@ -1001,7 +1292,9 @@ function Counter({
         </div>
       )}
       <PrintArea>
-        {printMode === "z" ? (
+        {printMode === "test-receipt" || printMode === "test-a4" ? (
+          <TestPage a4={printMode === "test-a4"} />
+        ) : printMode === "z" ? (
           <ZReport shift={shift} />
         ) : done ? (
           printMode === "a4" ? (
@@ -1019,8 +1312,11 @@ function Counter({
           )
         ) : null}
       </PrintArea>
-      <p className="pos-foot fine-print">
-        {reserved} invoice numbers reserved on this counter
+      <p className="pos-statusbar fine-print">
+        <span>{reserved} invoice numbers reserved on this counter</span>
+        <button className="pos-keys-hint" onClick={() => setSheet("keys")}>
+          <kbd>F1</kbd> shortcuts · <kbd>F2</kbd> search · <kbd>F4</kbd> pay
+        </button>
       </p>
     </div>
   );
@@ -1047,6 +1343,17 @@ function PaySheet({
   const [reference, setReference] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const completeRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.key === "Enter") {
+        e.preventDefault();
+        completeRef.current?.click();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const tendered = rupeesToPaise(amount || "0");
   const change =
     method === "cash" && tendered > remaining ? tendered - remaining : 0;
@@ -1208,6 +1515,8 @@ function PaySheet({
             )
           : null}
         <button
+          ref={completeRef}
+          aria-keyshortcuts="Control+Enter"
           className="btn btn-primary grow"
           disabled={busy || (tendered < remaining && remaining > 0)}
           onClick={() => {
@@ -1265,42 +1574,18 @@ function CustomerSheet({
   return (
     <Sheet title="Customer" onClose={onClose} wide>
       <div className="sheet-section">
-        <div className="field-row">
-          <label>
-            Walk-in name (optional)
-            <input
-              value={walkIn.name}
-              onChange={(e) => setWalkIn({ ...walkIn, name: e.target.value })}
-            />
-          </label>
-          <label>
-            Walk-in phone
-            <input
-              type="tel"
-              value={walkIn.phone}
-              onChange={(e) => setWalkIn({ ...walkIn, phone: e.target.value })}
-            />
-          </label>
-        </div>
-        <label>
-          Bill note
-          <input
-            value={notes}
-            maxLength={500}
-            onChange={(e) => setNotes(e.target.value)}
-          />
-        </label>
-        <button className="btn btn-ghost" onClick={() => onPick(null)}>
-          Use walk-in customer
-        </button>
         <label className="search">
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search saved customers by name, phone or GSTIN"
             aria-label="Search customers"
+            autoFocus
           />
         </label>
+        {q.trim() && !rows.length && (
+          <p className="muted">No saved customer matches “{q.trim()}”.</p>
+        )}
         <ul className="quote-list">
           {rows.map((c) => (
             <li key={c.id}>
@@ -1397,6 +1682,37 @@ function CustomerSheet({
           </form>
         )}
       </div>
+      <div className="sheet-section sheet-divided">
+        <h3 className="sheet-sub">Walk-in details and bill note</h3>
+        <div className="field-row">
+          <label>
+            Walk-in name (optional)
+            <input
+              value={walkIn.name}
+              onChange={(e) => setWalkIn({ ...walkIn, name: e.target.value })}
+            />
+          </label>
+          <label>
+            Walk-in phone
+            <input
+              type="tel"
+              value={walkIn.phone}
+              onChange={(e) => setWalkIn({ ...walkIn, phone: e.target.value })}
+            />
+          </label>
+        </div>
+        <label>
+          Bill note
+          <input
+            value={notes}
+            maxLength={500}
+            onChange={(e) => setNotes(e.target.value)}
+          />
+        </label>
+        <button className="btn btn-ghost" onClick={() => onPick(null)}>
+          Use walk-in customer
+        </button>
+      </div>
     </Sheet>
   );
 }
@@ -1446,6 +1762,264 @@ function QuoteLoader({
           </>
         )}
       </div>
+    </Sheet>
+  );
+}
+
+const SHORTCUTS = [
+  ["F1", "Show these shortcuts"],
+  ["F2 or /", "Search or scan"],
+  ["F3", "Choose customer"],
+  ["F4", "Pay"],
+  ["Ctrl + Enter", "Complete sale (in payment)"],
+  ["F6", "Bills"],
+  ["F7", "Cash in / out"],
+  ["F8", "Expense"],
+  ["F9", "Printers & scanner"],
+  ["Alt + ↑ / ↓", "Change quantity of the last item"],
+  ["Alt + Delete", "Remove the last item"],
+  ["Ctrl + Delete", "Clear the bill"],
+  ["P", "Print the finished bill"],
+  ["N", "New bill (after a sale)"],
+  ["Esc", "Close a window"],
+] as const;
+
+function DevicesSheet({
+  products,
+  onTestPrint,
+  onChange,
+  onClose,
+}: {
+  products: PosProduct[];
+  onTestPrint: (mode: PrintMode) => void;
+  onChange: (connected: boolean) => void;
+  onClose: () => void;
+}) {
+  const [prefs, setPrefs] = useState(printerPrefs);
+  const [connected, setConnected] = useState(printerConnected);
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [scan, setScan] = useState<{ code: string; ms: number } | null>(null);
+  const started = useRef(0);
+  const run = async (label: string, task: () => Promise<unknown>) => {
+    setBusy(true);
+    setStatus("");
+    try {
+      await task();
+      setStatus(label);
+    } catch (e) {
+      // Closing the browser's port picker is not an error worth showing.
+      if (!(e instanceof DOMException && e.name === "NotFoundError"))
+        setStatus(errorMessage(e));
+    } finally {
+      const now = printerConnected();
+      setConnected(now);
+      onChange(now);
+      setBusy(false);
+    }
+  };
+  const update = (patch: Partial<typeof prefs>) => {
+    const next = { ...prefs, ...patch };
+    setPrefs(next);
+    savePrinterPrefs(next);
+  };
+  const match = scan
+    ? products.find(
+        (p) =>
+          p.barcode.toLowerCase() === scan.code.toLowerCase() ||
+          p.code.toLowerCase() === scan.code.toLowerCase(),
+      )
+    : undefined;
+  return (
+    <Sheet title="Printers & scanner" onClose={onClose}>
+      <section className="sheet-section">
+        <h3 className="devices-head">
+          <FileText size={18} aria-hidden="true" /> Bill printing
+        </h3>
+        <div
+          className="segmented wide"
+          role="group"
+          aria-label="Default bill format"
+        >
+          {(
+            [
+              ["receipt", "80 mm receipt"],
+              ["a4", "A4 tax invoice"],
+              ["direct", "Direct USB"],
+            ] as const
+          ).map(([id, name]) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={prefs.billFormat === id}
+              onClick={() => update({ billFormat: id })}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+        <label className="ret-check">
+          <input
+            type="checkbox"
+            checked={prefs.autoPrint}
+            onChange={(e) => update({ autoPrint: e.target.checked })}
+          />
+          <span>
+            <strong>Print automatically after every sale</strong>
+            <small>
+              Otherwise choose a format on the finished bill each time.
+            </small>
+          </span>
+        </label>
+        <div className="devices-row">
+          <button
+            className="btn btn-ghost"
+            onClick={() => onTestPrint("test-receipt")}
+          >
+            Test 80 mm page
+          </button>
+          <button
+            className="btn btn-ghost"
+            onClick={() => onTestPrint("test-a4")}
+          >
+            Test A4 page
+          </button>
+        </div>
+        <p className="muted">
+          80 mm and A4 bills print through the normal print dialog, so any
+          printer installed on this computer works: thermal, laser or inkjet.
+          Pick the printer and paper size once in the dialog; Chrome remembers
+          it. To skip the dialog on the counter PC, start Chrome with{" "}
+          <code>--kiosk-printing</code> and it prints straight to the default
+          printer.
+        </p>
+      </section>
+      <section className="sheet-section sheet-divided">
+        <h3 className="devices-head">
+          <Printer size={18} aria-hidden="true" /> Direct USB receipt printer
+          <span className={`pos-dot${connected ? " on" : ""}`} />
+          <small>{connected ? "Connected" : "Not connected"}</small>
+        </h3>
+        {serialSupported() ? (
+          <>
+            <div className="devices-row">
+              <label>
+                Paper
+                <select
+                  value={prefs.paperMm}
+                  onChange={(e) =>
+                    update({ paperMm: Number(e.target.value) as 58 | 80 })
+                  }
+                >
+                  <option value={80}>80 mm</option>
+                  <option value={58}>58 mm</option>
+                </select>
+              </label>
+              <label>
+                Speed (baud)
+                <select
+                  value={prefs.baudRate}
+                  onChange={(e) => update({ baudRate: Number(e.target.value) })}
+                >
+                  {[9600, 19200, 38400, 57600, 115200].map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="devices-row">
+              {connected ? (
+                <button
+                  className="btn btn-ghost"
+                  disabled={busy}
+                  onClick={() => run("Disconnected", disconnectPrinter)}
+                >
+                  Disconnect
+                </button>
+              ) : (
+                <button
+                  className="btn btn-primary"
+                  disabled={busy}
+                  onClick={() => run("Printer connected", connectPrinter)}
+                >
+                  Connect printer
+                </button>
+              )}
+              <button
+                className="btn btn-ghost"
+                disabled={busy || !connected}
+                onClick={() => run("Test page sent", testPrint)}
+              >
+                Test print
+              </button>
+              <button
+                className="btn btn-ghost"
+                disabled={busy || !connected}
+                onClick={() => run("Drawer opened", openDrawer)}
+              >
+                Open drawer
+              </button>
+            </div>
+            {status && (
+              <p className="muted" role="status">
+                {status}
+              </p>
+            )}
+            <p className="muted">
+              Plug the printer in by USB, press Connect and pick it from the
+              list. Chrome remembers it, so it reconnects by itself next time.
+              Changed speed or paper? Disconnect and connect again. Garbled text
+              means the speed is wrong. The usual setting is 9600 or 115200.
+            </p>
+          </>
+        ) : (
+          <p className="muted">
+            Direct printing needs Chrome or Edge on a computer. You can still
+            print every bill through the normal print dialog to any installed
+            printer.
+          </p>
+        )}
+      </section>
+      <section className="sheet-section">
+        <h3 className="devices-head">
+          <ScanBarcode size={18} aria-hidden="true" /> Barcode scanner
+        </h3>
+        <label>
+          Scan any product here to test
+          <input
+            autoFocus
+            autoComplete="off"
+            placeholder="Click here, then scan"
+            onKeyDown={(e) => {
+              if (!started.current) started.current = performance.now();
+              if (e.key !== "Enter") return;
+              e.preventDefault();
+              const code = e.currentTarget.value.trim();
+              setScan({
+                code,
+                ms: Math.round(performance.now() - started.current),
+              });
+              started.current = 0;
+              e.currentTarget.value = "";
+            }}
+          />
+        </label>
+        {scan && (
+          <p className={`banner ${match ? "ok" : "warn"}`} role="status">
+            Read <b>{scan.code || "(empty)"}</b> in {scan.ms} ms ·{" "}
+            {match
+              ? `${match.code} ${match.name}`
+              : "no product has this barcode or code"}
+          </p>
+        )}
+        <p className="muted">
+          The scanner must send Enter after each code (most do by default). A
+          scan that takes over 300 ms usually means it is typing slowly, or
+          someone typed by hand. Scans work anywhere on the billing screen.
+        </p>
+      </section>
     </Sheet>
   );
 }
@@ -1695,14 +2269,24 @@ function BillsSheet({
     Omit<Invoice, "lines" | "payments" | "creditNotes">[]
   >([]);
   const [all, setAll] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const queue = readQueue();
   useEffect(() => {
     const t = setTimeout(() => {
+      setLoading(true);
       api<typeof rows>(
         `/pos/invoices?q=${encodeURIComponent(q)}${all ? "" : `&shift=${shiftId}`}`,
       )
-        .then(setRows)
-        .catch(() => setRows([]));
+        .then((r) => {
+          setRows(r);
+          setError("");
+        })
+        .catch((e) => {
+          setRows([]);
+          setError(errorMessage(e));
+        })
+        .finally(() => setLoading(false));
     }, 200);
     return () => clearTimeout(t);
   }, [q, all, shiftId]);
@@ -1726,21 +2310,41 @@ function BillsSheet({
               aria-label="Search bills"
             />
           </label>
-          <label className="switch-row">
-            <span>All shifts</span>
-            <input
-              type="checkbox"
-              checked={all}
-              onChange={(e) => setAll(e.target.checked)}
-            />
-          </label>
+          <div className="segmented" role="group" aria-label="Which bills">
+            <button
+              type="button"
+              aria-pressed={!all}
+              onClick={() => setAll(false)}
+            >
+              This shift
+            </button>
+            <button
+              type="button"
+              aria-pressed={all}
+              onClick={() => setAll(true)}
+            >
+              All bills
+            </button>
+          </div>
         </div>
+        {error && <p className="banner error">{error}</p>}
+        {!loading && !error && !rows.length && (
+          <p className="muted empty-note">
+            {q.trim()
+              ? `No bill matches “${q.trim()}”.`
+              : all
+                ? "No bills yet."
+                : "No bills in this shift yet."}
+          </p>
+        )}
         <ul className="quote-list">
           {rows.map((i) => (
             <li key={i.id}>
               <button
                 onClick={() =>
-                  api<Invoice>(`/pos/invoices/${i.id}`).then(onOpen)
+                  api<Invoice>(`/pos/invoices/${i.id}`)
+                    .then(onOpen)
+                    .catch((e) => setError(errorMessage(e)))
                 }
               >
                 <span className="quote-list-main">
@@ -1788,6 +2392,38 @@ function DoneSheet({
   const i = done.invoice;
   const [mode, setMode] = useState<"main" | "return" | "collect">("main");
   const due = balanceOf(i);
+  const direct = async () => {
+    try {
+      if (!printerConnected() && !(await restorePrinter()))
+        await connectPrinter();
+      await printEscPos(
+        i,
+        footer,
+        i.payments.some((p) => p.method === "cash"),
+        payment,
+      );
+    } catch (e) {
+      notify(errorMessage(e));
+    }
+  };
+  useEffect(() => {
+    if (mode !== "main") return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement).closest("input, textarea, select")) return;
+      const k = e.key.toLowerCase();
+      if (k === "n") {
+        e.preventDefault();
+        onClose();
+      } else if (k === "p") {
+        e.preventDefault();
+        const format = printerPrefs().billFormat;
+        if (format === "direct") void direct();
+        else onPrint(format);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
   const text = [
     `*LENORE · Invoice ${i.number}*`,
     `${i.customer.name} · ${i.date}`,
@@ -1833,22 +2469,7 @@ function DoneSheet({
                 <FileText size={20} aria-hidden="true" /> A4 tax invoice
               </button>
               {serialSupported() && (
-                <button
-                  className="share-tile"
-                  onClick={async () => {
-                    try {
-                      if (!printerConnected()) await connectPrinter();
-                      await printEscPos(
-                        i,
-                        footer,
-                        i.payments.some((p) => p.method === "cash"),
-                        payment,
-                      );
-                    } catch (e) {
-                      notify(errorMessage(e));
-                    }
-                  }}
-                >
+                <button className="share-tile" onClick={() => void direct()}>
                   <Printer size={20} aria-hidden="true" /> Direct print + drawer
                 </button>
               )}
@@ -1883,7 +2504,8 @@ function DoneSheet({
           </div>
           <div className="sheet-actions">
             <button className="btn btn-primary grow" onClick={onClose}>
-              <RefreshCw size={16} aria-hidden="true" /> New bill
+              <RefreshCw size={16} aria-hidden="true" /> New bill{" "}
+              <kbd className="kbd-hint">N</kbd>
             </button>
           </div>
         </>
@@ -1936,46 +2558,125 @@ export function ReturnForm({
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
   const [id] = useState(() => crypto.randomUUID());
+  const [busy, setBusy] = useState(false);
   const lines = Object.entries(qty)
     .filter(([, q]) => q > 0)
     .map(([lineNo, q]) => ({ lineNo: Number(lineNo), qty: q }));
+  const left = (l: Invoice["lines"][number]) => l.qty - l.returnedQty;
+  const set = (l: Invoice["lines"][number], n: number) =>
+    setQty({ ...qty, [l.lineNo]: Math.max(0, Math.min(left(l), n)) });
+  // Estimate only: the server computes the exact credit, including rounding.
+  const credit = invoice.lines.reduce(
+    (sum, l) => sum + Math.round(((qty[l.lineNo] ?? 0) * l.total) / l.qty),
+    0,
+  );
+  const units = lines.reduce((n, l) => n + l.qty, 0);
+  const returnable = invoice.lines.filter((l) => left(l) > 0);
   return (
-    <div className="sheet-section">
-      <ul className="summary-lines">
-        {invoice.lines.map((l) => (
-          <li key={l.lineNo}>
-            <span>
-              <strong>{l.name}</strong>
-              <small className="muted">
-                Sold {l.qty} · returned {l.returnedQty}
-              </small>
-            </span>
-            <input
-              className="count-input"
-              inputMode="numeric"
-              aria-label={`Return quantity for ${l.code}`}
-              value={qty[l.lineNo] ?? ""}
-              onChange={(e) =>
-                setQty({
-                  ...qty,
-                  [l.lineNo]: Math.min(
-                    l.qty - l.returnedQty,
-                    Number(e.target.value.replace(/\D/g, "")) || 0,
-                  ),
-                })
-              }
-            />
-          </li>
-        ))}
+    <div className="sheet-section ret">
+      <div className="ret-head">
+        <span>Choose what is coming back</span>
+        {returnable.length > 0 && (
+          <button
+            type="button"
+            className="text-btn"
+            onClick={() =>
+              setQty(
+                Object.fromEntries(returnable.map((l) => [l.lineNo, left(l)])),
+              )
+            }
+          >
+            Return everything
+          </button>
+        )}
+      </div>
+      <ul className="ret-lines">
+        {invoice.lines.map((l) => {
+          const n = qty[l.lineNo] ?? 0;
+          return (
+            <li key={l.lineNo} className={n > 0 ? "picked" : ""}>
+              <span className="ret-item">
+                <strong>{l.name}</strong>
+                <small>
+                  {l.code} · {money(Math.round(l.total / l.qty))} each · sold{" "}
+                  {l.qty}
+                  {l.returnedQty > 0 && `, ${l.returnedQty} already returned`}
+                </small>
+              </span>
+              {left(l) > 0 ? (
+                <div
+                  className="stepper compact"
+                  role="group"
+                  aria-label={`Return quantity for ${l.code}`}
+                >
+                  <button
+                    type="button"
+                    aria-label="Fewer"
+                    disabled={n === 0}
+                    onClick={() => set(l, n - 1)}
+                  >
+                    <Minus size={14} />
+                  </button>
+                  <input
+                    inputMode="numeric"
+                    aria-label={`Return quantity for ${l.code}`}
+                    value={n}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onChange={(e) =>
+                      set(l, Number(e.target.value.replace(/\D/g, "")) || 0)
+                    }
+                  />
+                  <button
+                    type="button"
+                    aria-label="More"
+                    disabled={n >= left(l)}
+                    onClick={() => set(l, n + 1)}
+                  >
+                    <Plus size={14} />
+                  </button>
+                </div>
+              ) : (
+                <span className="ret-done">Fully returned</span>
+              )}
+            </li>
+          );
+        })}
       </ul>
-      <label className="switch-row">
-        <span>Return goods to stock (uncheck if damaged)</span>
+      <label className="ret-check">
         <input
           type="checkbox"
           checked={restock}
           onChange={(e) => setRestock(e.target.checked)}
         />
+        <span>
+          <strong>Put items back in stock</strong>
+          <small>Untick for damaged goods, so stock stays correct.</small>
+        </span>
       </label>
+      <fieldset className="ret-field">
+        <legend>Reason</legend>
+        <div className="chip-row wrap">
+          {["Wrong item", "Wrong size", "Damaged", "Customer changed mind"].map(
+            (r) => (
+              <button
+                key={r}
+                type="button"
+                className="chip"
+                aria-pressed={reason === r}
+                onClick={() => setReason(r)}
+              >
+                {r}
+              </button>
+            ),
+          )}
+        </div>
+        <input
+          aria-label="Reason"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="Or type a reason"
+        />
+      </fieldset>
       <label>
         Refund method (if money is due back)
         <select
@@ -1989,14 +2690,14 @@ export function ReturnForm({
           ))}
         </select>
       </label>
-      <label>
-        Reason
-        <input
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          placeholder="e.g. Wrong size, customer changed mind"
-        />
-      </label>
+      {lines.length > 0 && (
+        <p className="ret-total">
+          <span>
+            Returning {units} {units === 1 ? "item" : "items"}
+          </span>
+          <b>about {money(credit)}</b>
+        </p>
+      )}
       {error && <p className="error">{error}</p>}
       <div className="sheet-actions">
         <button className="btn btn-ghost" onClick={onCancel}>
@@ -2004,8 +2705,10 @@ export function ReturnForm({
         </button>
         <button
           className="btn btn-primary grow"
-          disabled={!lines.length || reason.trim().length < 3}
+          disabled={busy || !lines.length || reason.trim().length < 3}
           onClick={async () => {
+            setBusy(true);
+            setError("");
             try {
               const r = await api<{ invoice: Invoice; refunded: number }>(
                 `/pos/invoices/${invoice.id}/credit-notes`,
@@ -2023,10 +2726,18 @@ export function ReturnForm({
               onDone(r.invoice, r.refunded);
             } catch (e) {
               setError(errorMessage(e));
+            } finally {
+              setBusy(false);
             }
           }}
         >
-          Issue credit note
+          {busy
+            ? "Issuing…"
+            : !lines.length
+              ? "Choose items to return"
+              : reason.trim().length < 3
+                ? "Add a reason"
+                : `Issue credit note`}
         </button>
       </div>
     </div>

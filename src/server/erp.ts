@@ -1093,7 +1093,7 @@ routes.get("/pos/bootstrap", async (c) => {
     readSettings(db),
     db
       .prepare(
-        "SELECT id,code,name,category,unit,hsn,gst_rate_bp,barcode,price_paise,stock,image_key,bin FROM products ORDER BY name LIMIT 5000",
+        "SELECT id,code,name,category,unit,hsn,gst_rate_bp,barcode,price_paise,stock,image_key,poster_key,bin FROM products ORDER BY name LIMIT 5000",
       )
       .all(),
     db
@@ -1127,6 +1127,7 @@ routes.get("/pos/bootstrap", async (c) => {
     },
     cashier: posActor(v),
     today: indiaToday(),
+    demo: c.env.DEMO_MODE === "true",
     products: (products.results as Record<string, unknown>[]).map((p) => ({
       id: p.id,
       code: p.code,
@@ -1140,6 +1141,7 @@ routes.get("/pos/bootstrap", async (c) => {
       stock: p.stock,
       bin: p.bin,
       imageUrl: p.image_key ? `/api/media/${p.image_key}` : null,
+      posterUrl: p.poster_key ? `/api/media/${p.poster_key}` : null,
     })),
     priceLists: lists.results,
     priceListItems: items.results,

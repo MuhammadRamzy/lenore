@@ -19,6 +19,8 @@ function sql(command: string) {
       "execute",
       "lenore-local",
       "--local",
+      "--persist-to",
+      ".wrangler/e2e",
       "--command",
       command,
     ],
@@ -246,8 +248,19 @@ test("admins create, publish and stock a product, and the catalogue reflects it"
     .fill(`89${Date.now().toString().slice(-11)}`);
   await page.getByLabel("Shelf / bin").fill("Z-09");
   await page.getByText("Publish to the sales catalogue").click();
+  // A transparent PNG is converted to WebP in the browser before upload.
+  await page
+    .getByLabel(/Add a product photograph/)
+    .setInputFiles("public/images/mixer-cutout.png");
+  const upload = page.waitForResponse((r) => r.url().includes("/image?slot="));
   await page.getByRole("button", { name: "Save product" }).click();
   await expect(page.getByText("Product saved.")).toBeVisible();
+  const { imageUrl } = (await (await upload).json()) as { imageUrl: string };
+  const photo = await page.request.get(imageUrl);
+  expect(photo.headers()["content-type"]).toBe("image/webp");
+  expect((await photo.body()).length).toBeLessThan(
+    readFileSync("public/images/mixer-cutout.png").length,
+  );
   await page.getByRole("button", { name: "Inventory", exact: true }).click();
   await page
     .getByRole("row", { name: new RegExp(code) })

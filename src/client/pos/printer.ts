@@ -6,27 +6,127 @@ import { billQr } from "./qr";
 /** Direct ESC/POS printing to a USB/serial receipt printer (Chrome/Edge Web Serial). */
 type SerialPortLike = {
   open: (o: { baudRate: number }) => Promise<void>;
-  writable: WritableStream<Uint8Array>;
+  close: () => Promise<void>;
+  writable: WritableStream<Uint8Array> | null;
+};
+type SerialLike = {
+  requestPort: () => Promise<SerialPortLike>;
+  getPorts: () => Promise<SerialPortLike[]>;
 };
 let port: SerialPortLike | null = null;
+const serial = () => (navigator as unknown as { serial: SerialLike }).serial;
 export const serialSupported = () =>
   typeof navigator !== "undefined" && "serial" in navigator;
 
+export type BillFormat = "receipt" | "a4" | "direct";
+export type PrinterPrefs = {
+  baudRate: number;
+  paperMm: 58 | 80;
+  /** What "print" means after a sale: 80 mm or A4 via the print dialog, or direct USB. */
+  billFormat: BillFormat;
+  autoPrint: boolean;
+};
+const DEFAULTS: PrinterPrefs = {
+  baudRate: 9600,
+  paperMm: 80,
+  billFormat: "receipt",
+  autoPrint: false,
+};
+const PREFS = "lenore-printer";
+export function printerPrefs(): PrinterPrefs {
+  try {
+    return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(PREFS) ?? "{}") };
+  } catch {
+    return DEFAULTS;
+  }
+}
+export function savePrinterPrefs(p: PrinterPrefs) {
+  try {
+    localStorage.setItem(PREFS, JSON.stringify(p));
+  } catch {
+    // Defaults still work when storage is unavailable.
+  }
+}
+
+/** Asks the cashier to pick the printer (once); the browser remembers the approval. */
 export async function connectPrinter() {
-  const serial = (
-    navigator as unknown as {
-      serial: { requestPort: () => Promise<SerialPortLike> };
-    }
-  ).serial;
-  port = await serial.requestPort();
-  await port.open({ baudRate: 9600 });
+  await disconnectPrinter();
+  const next = await serial().requestPort();
+  await next.open({ baudRate: printerPrefs().baudRate });
+  port = next;
   return true;
+}
+/** Reopens a printer approved earlier, without a prompt. False if none. */
+export async function restorePrinter() {
+  if (port || !serialSupported()) return !!port;
+  const [known] = await serial().getPorts();
+  if (!known) return false;
+  try {
+    await known.open({ baudRate: printerPrefs().baudRate });
+  } catch {
+    // Already open in another tab, or unplugged.
+    return false;
+  }
+  port = known;
+  return true;
+}
+export async function disconnectPrinter() {
+  const old = port;
+  port = null;
+  await old?.close().catch(() => undefined);
 }
 export const printerConnected = () => !!port;
 
-const WIDTH = 42;
+async function send(bytes: Uint8Array) {
+  if (!port?.writable) throw new Error("Connect the receipt printer first.");
+  const writer = port.writable.getWriter();
+  try {
+    await writer.write(bytes);
+  } catch {
+    port = null;
+    throw new Error(
+      "The printer stopped responding. Check the cable and reconnect.",
+    );
+  } finally {
+    writer.releaseLock();
+  }
+}
+const DRAWER = [0x1b, 0x70, 0x00, 0x19, 0xfa];
+export const openDrawer = () => send(new Uint8Array(DRAWER));
+
+/** Short page to check alignment, width, logo, QR and the cutter. */
+export async function testPrint() {
+  const w = width();
+  const text = [
+    "\x1ba\x01\x1b!\x30LENORE\x1b!\x00",
+    "PRINTER TEST",
+    new Date().toLocaleString("en-IN"),
+    "\x1ba\x00",
+    "-".repeat(w),
+    pad("Left", "Right"),
+    "1234567890".repeat(Math.ceil(w / 10)).slice(0, w),
+    `Paper ${printerPrefs().paperMm} mm - ${w} characters`,
+    `Baud ${printerPrefs().baudRate}`,
+    "-".repeat(w),
+    "\x1ba\x01If the line above fits exactly, the width is right.",
+    "",
+  ].join("\n");
+  await send(
+    new Uint8Array([
+      0x1b,
+      0x40,
+      ...(await logoBytes()),
+      ...ascii(text + "\n"),
+      ...qrBytes("LENORE PRINTER TEST"),
+      ...ascii("\n\n\n\x1dV\x41\x03"),
+    ]),
+  );
+}
+
+/** Characters per line in font A: 42 fits most 80 mm printers, 32 fits 58 mm. */
+const width = () => (printerPrefs().paperMm === 58 ? 32 : 42);
 const pad = (left: string, right: string) => {
-  const space = Math.max(1, WIDTH - left.length - right.length);
+  const space = Math.max(1, width() - left.length - right.length);
   return `${left}${" ".repeat(space)}${right}`;
 };
 const rupees = (p: number) => (p / 100).toFixed(2);
@@ -92,10 +192,10 @@ const ascii = (text: string) =>
 export async function printEscPos(
   invoice: Invoice,
   footer: string,
-  openDrawer: boolean,
+  withDrawer: boolean,
   payment?: PaymentDetails,
 ) {
-  if (!port) throw new Error("Connect the receipt printer first.");
+  const WIDTH = width();
   const lines = [
     "\x1ba\x01\x1b!\x30LENORE\x1b!\x00",
     business.tagline.toUpperCase(),
@@ -150,15 +250,5 @@ export async function printEscPos(
   const code = link ? qrBytes(link) : new Uint8Array();
   const rest = ascii(tail.join("\n"));
   const bytes = new Uint8Array([...head, ...code, ...rest]);
-  const drawer = openDrawer
-    ? new Uint8Array([0x1b, 0x70, 0x00, 0x19, 0xfa])
-    : new Uint8Array();
-  const writer = port.writable.getWriter();
-  try {
-    await writer.write(
-      drawer.length ? new Uint8Array([...drawer, ...bytes]) : bytes,
-    );
-  } finally {
-    writer.releaseLock();
-  }
+  await send(withDrawer ? new Uint8Array([...DRAWER, ...bytes]) : bytes);
 }

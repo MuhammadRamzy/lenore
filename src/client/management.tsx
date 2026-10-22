@@ -1,6 +1,6 @@
 import "./styles.css";
 import { Overlay } from "./overlay";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -21,7 +21,6 @@ import {
   Plus,
   RefreshCw,
   Search,
-  Settings,
   SlidersHorizontal,
   X,
   Landmark,
@@ -43,17 +42,29 @@ import {
   Menu,
   Calculator,
   Globe,
+  Percent,
+  ScanBarcode,
 } from "lucide-react";
 import {
   type Product,
   type ProductInput,
   type Quote,
   type Activity,
+  type SessionInfo,
   availability,
   money,
 } from "../shared";
 import { api, ApiError, errorMessage } from "./api";
-import { Brand, type SiteConfig } from "./brand";
+import {
+  MAX_SOURCE_BYTES,
+  PHOTO_SIDE,
+  POSTER_SIDE,
+  toWebp,
+  uploadThumb,
+} from "./webp";
+import { thumb } from "./links";
+import { Scanner, scanFeedback } from "./scanner";
+import { Brand } from "./brand";
 import { downloadInventoryCsv } from "./export";
 import { FinanceWorkspace } from "./finance";
 import {
@@ -62,6 +73,7 @@ import {
   ImportProducts,
   InsightsPanel,
   LabelSheet,
+  TaxTool,
   QuotationsPanel,
   StockCount,
   StockLedger,
@@ -114,7 +126,6 @@ const navigation = [
     group: "Admin",
   },
   { id: "activity", label: "Activity", icon: RefreshCw, group: "Admin" },
-  { id: "settings", label: "Settings", icon: Settings, group: "Admin" },
 ];
 const groups = ["Sales", "Billing", "Stock", "Money", "Admin"];
 /** Phone tab bar: the daily essentials; everything else is one tap away in Menu. */
@@ -168,20 +179,10 @@ function productFields(p: Product): ProductInput {
 }
 
 export function Management() {
-  const [config, setConfig] = useState<SiteConfig>({
-    demo: false,
-    whatsapp: "",
-    integration: "disconnected",
-  });
-  useEffect(() => {
-    api<SiteConfig>("/config")
-      .then(setConfig)
-      .catch(() => undefined);
-  }, []);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [salesOnly, setSalesOnly] = useState(false);
   const [tool, setTool] = useState<
-    "count" | "import" | "photos" | "labels" | null
+    "count" | "import" | "photos" | "labels" | "tax" | null
   >(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [view, setView] = useState(() => {
@@ -203,16 +204,23 @@ export function Management() {
   const [quote, setQuote] = useState<Quote | null>(null);
   const [quoteError, setQuoteError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [who, setWho] = useState<SessionInfo | null>(null);
+  const loadSession = () =>
+    api<SessionInfo>("/session").then((r) => {
+      setWho(r);
+      setSalesOnly(r.role === "sales");
+      setSignedIn(r.authenticated);
+    });
   useEffect(() => {
-    api<{ authenticated: boolean; role: string | null }>("/session")
-      .then((r) => {
-        setSalesOnly(r.role === "sales");
-        setSignedIn(r.authenticated);
-      })
-      .catch((e) => {
-        setError(errorMessage(e));
-        setSignedIn(false);
-      });
+    const out = () => setSignedIn(false);
+    window.addEventListener("lenore:signed-out", out);
+    return () => window.removeEventListener("lenore:signed-out", out);
+  }, []);
+  useEffect(() => {
+    loadSession().catch((e) => {
+      setError(errorMessage(e));
+      setSignedIn(false);
+    });
   }, []);
   async function refresh() {
     setLoading(true);
@@ -265,6 +273,44 @@ export function Management() {
       setError(errorMessage(e));
     }
   }
+  const [camera, setCamera] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  /** Scan or exact code: jump to the product's stock (Inventory) or details. */
+  function openScanned(raw: string) {
+    const code = raw.trim().toLowerCase();
+    const hit = products.find(
+      (p) =>
+        (p.barcode && p.barcode.toLowerCase() === code) ||
+        p.code.toLowerCase() === code,
+    );
+    if (!hit) {
+      setError(`No product has the barcode or code ${raw.trim()}.`);
+      return false;
+    }
+    setError("");
+    setSearch("");
+    if (view === "inventory") setAdjusting(hit);
+    else setEditing(hit);
+    return true;
+  }
+  // USB scanners type anywhere: on product pages, catch the keys in search.
+  useEffect(() => {
+    if (!["products", "inventory", "catalogue"].includes(view)) return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (
+        e.key.length !== 1 ||
+        e.ctrlKey ||
+        e.metaKey ||
+        e.altKey ||
+        t.closest("input, textarea, select, dialog, [contenteditable]")
+      )
+        return;
+      searchRef.current?.focus({ preventScroll: true });
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [view]);
   function navigate(id: string) {
     setView(id);
     setSearch("");
@@ -272,6 +318,8 @@ export function Management() {
     setCategoryFilter("all");
     setNotice("");
     window.history.pushState(null, "", `#${id}`);
+    // A new view starts at its top, not wherever the last one was scrolled.
+    window.scrollTo({ top: 0 });
   }
   useEffect(() => {
     const handler = () => {
@@ -336,6 +384,43 @@ export function Management() {
         <p>Opening your workspace…</p>
       </main>
     );
+  if (!signedIn && salesOnly && who)
+    // Signed in, but as sales staff: point them at the apps they can use.
+    return (
+      <main className="login-page">
+        <div className="login-brand">
+          <Brand />
+        </div>
+        <section className="login-box">
+          <h1>Hello{who.name ? `, ${who.name}` : ""}</h1>
+          <p>
+            The management workspace is for admins. Your account opens the sales
+            catalogue{who.posAccess ? " and the billing counter" : ""}.
+          </p>
+          <div className="login-actions">
+            <a className="button dark wide" href="/catalogue">
+              Open sales catalogue <ArrowUpRight size={18} />
+            </a>
+            {who.posAccess && (
+              <a className="button wide" href="/pos">
+                <Calculator size={18} /> Open billing counter
+              </a>
+            )}
+          </div>
+          <button
+            className="text-link"
+            onClick={async () => {
+              await api("/session", undefined, "DELETE").catch(() => undefined);
+              setWho(null);
+              setSalesOnly(false);
+            }}
+          >
+            Sign out and use another account
+          </button>
+        </section>
+        <p className="login-foot">Lenore management · Secure staff access</p>
+      </main>
+    );
   if (!signedIn)
     return (
       <main className="login-page">
@@ -344,13 +429,6 @@ export function Management() {
         </div>
         <section className="login-box">
           <h1>Lenore staff access</h1>
-          {salesOnly && (
-            <p className="error" role="status">
-              This is a salesperson account. Open the{" "}
-              <a href="/catalogue">sales catalogue</a>, or sign in with an admin
-              account.
-            </p>
-          )}
           <p>
             Sign in to manage Lenore’s products, inventory and sales catalogue.
           </p>
@@ -372,6 +450,7 @@ export function Management() {
                 );
                 setSalesOnly(r.role === "sales");
                 setSignedIn(r.authenticated);
+                if (r.role === "sales") await loadSession();
               } catch (e) {
                 setError(errorMessage(e));
               } finally {
@@ -682,7 +761,11 @@ export function Management() {
                           <button key={p.id} onClick={() => setAdjusting(p)}>
                             <div className="mini-photo">
                               {p.imageUrl ? (
-                                <img src={p.imageUrl} alt="" />
+                                <img
+                                  src={thumb(p.imageUrl)}
+                                  alt=""
+                                  loading="lazy"
+                                />
                               ) : (
                                 <Package size={21} />
                               )}
@@ -806,11 +889,28 @@ export function Management() {
                 <label className="search">
                   <Search size={17} />
                   <input
-                    placeholder="Search products"
+                    ref={searchRef}
+                    placeholder="Search or scan a barcode"
                     aria-label="Search products"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
+                    onKeyDown={(e) => {
+                      // A scanner types the code and presses Enter.
+                      if (e.key === "Enter" && search.trim()) {
+                        e.preventDefault();
+                        scanFeedback(openScanned(search));
+                      }
+                    }}
                   />
+                  <button
+                    type="button"
+                    className="search-scan"
+                    aria-label="Scan with camera"
+                    title="Scan with camera"
+                    onClick={() => setCamera(true)}
+                  >
+                    <ScanBarcode size={17} />
+                  </button>
                 </label>
               </div>
               <div className="table-secondary-tools">
@@ -860,6 +960,15 @@ export function Management() {
                   >
                     <Printer size={16} /> Labels
                   </button>
+                  {view === "products" && (
+                    <button
+                      className="button"
+                      disabled={!visible.length}
+                      onClick={() => setTool("tax")}
+                    >
+                      <Percent size={16} /> GST &amp; HSN
+                    </button>
+                  )}
                   <button
                     className="button"
                     disabled={!visible.length}
@@ -899,7 +1008,11 @@ export function Management() {
                           >
                             <span className="mini-photo">
                               {p.imageUrl ? (
-                                <img src={p.imageUrl} alt="" />
+                                <img
+                                  src={thumb(p.imageUrl)}
+                                  alt=""
+                                  loading="lazy"
+                                />
                               ) : (
                                 <Package size={22} />
                               )}
@@ -1046,15 +1159,10 @@ export function Management() {
                 </div>
               )}
             </section>
-          ) : view === "activity" ? (
+          ) : (
             <section className="work-section">
               <ActivityList rows={activity} />
             </section>
-          ) : (
-            <SettingsPanel
-              config={config}
-              onSaved={() => setNotice("Contact settings saved.")}
-            />
           )}
           <footer className="workspace-footer">
             <span>Lenore · Management workspace</span>
@@ -1163,6 +1271,30 @@ export function Management() {
             void refresh();
           }}
           onSaved={setNotice}
+        />
+      )}
+      {camera && (
+        <Scanner
+          title={
+            view === "inventory" ? "Scan to adjust stock" : "Scan a product"
+          }
+          onDetect={(code) => {
+            const ok = openScanned(code);
+            if (ok) setCamera(false);
+            return ok;
+          }}
+          onClose={() => setCamera(false)}
+        />
+      )}
+      {tool === "tax" && (
+        <TaxTool
+          products={visible}
+          onClose={() => setTool(null)}
+          onSaved={async (m) => {
+            setTool(null);
+            setNotice(m);
+            await refresh();
+          }}
         />
       )}
       {tool === "labels" && (
@@ -1385,7 +1517,10 @@ function ProductEditor({
                     {
                       method: "POST",
                       headers: { "If-Match": String(latest.revision) },
-                      body: file,
+                      body: await toWebp(
+                        file,
+                        slot === "poster" ? POSTER_SIDE : PHOTO_SIDE,
+                      ),
                     },
                   );
                   const result = (await response.json()) as Product & {
@@ -1397,6 +1532,10 @@ function ProductEditor({
                     );
                   latest = result;
                   setSavedProduct(result);
+                  await uploadThumb(
+                    file,
+                    slot === "poster" ? result.posterUrl : result.imageUrl,
+                  );
                   if (slot === "photo") setImage(null);
                   else setPoster(null);
                 }
@@ -1590,14 +1729,14 @@ function ProductEditor({
             <label className="upload-field">
               <ImagePlus size={24} />
               <strong>{image ? image.name : "Add a product photograph"}</strong>
-              <span>JPEG, PNG or WebP · up to 5 MB</span>
+              <span>JPEG, PNG or WebP · saved as WebP</span>
               <input
                 type="file"
-                accept="image/jpeg,image/png,image/webp"
+                accept="image/*"
                 onChange={(e) => {
                   const f = e.target.files?.[0];
-                  if (f && f.size > 5 * 1024 * 1024) {
-                    setError("Choose an image under 5 MB.");
+                  if (f && f.size > MAX_SOURCE_BYTES) {
+                    setError("Choose an image under 25 MB.");
                     e.target.value = "";
                     return;
                   }
@@ -1611,14 +1750,14 @@ function ProductEditor({
               <strong>
                 {poster ? poster.name : "Add a specification poster"}
               </strong>
-              <span>Second product image · JPEG, PNG or WebP · up to 5 MB</span>
+              <span>Second product image · saved as WebP</span>
               <input
                 type="file"
-                accept="image/jpeg,image/png,image/webp"
+                accept="image/*"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (file && file.size > 5 * 1024 * 1024) {
-                    setError("Choose a poster under 5 MB.");
+                  if (file && file.size > MAX_SOURCE_BYTES) {
+                    setError("Choose a poster under 25 MB.");
                     e.target.value = "";
                     return;
                   }
@@ -1841,93 +1980,5 @@ function StockEditor({
         </section>
       </div>
     </Overlay>
-  );
-}
-function SettingsPanel({
-  config,
-  onSaved,
-}: {
-  config: SiteConfig;
-  onSaved: () => void;
-}) {
-  const [phone, setPhone] = useState(config.whatsapp);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    api<SiteConfig>("/config")
-      .then((c) => setPhone(c.whatsapp))
-      .catch((e) => setError(errorMessage(e)));
-  }, []);
-  return (
-    <div className="settings-grid">
-      <section className="work-section settings-section">
-        <h2>Sales contact</h2>
-        <p>
-          Send catalogue enquiries to your team’s WhatsApp number. Leave blank
-          to let the sender choose a recipient.
-        </p>
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setBusy(true);
-            setError("");
-            try {
-              await api("/admin/settings", { whatsapp: phone }, "PUT");
-              onSaved();
-            } catch (e) {
-              setError(errorMessage(e));
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          <label>
-            WhatsApp number
-            <input
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="Country code and digits only"
-              pattern="[0-9]{7,15}|"
-            />
-          </label>
-          <p className="muted">Include country code. No spaces or + sign.</p>
-          {error && (
-            <p className="error" role="alert">
-              {error}
-            </p>
-          )}
-          <button className="button dark" disabled={busy}>
-            {busy ? "Saving…" : "Save contact"}
-            <Check size={16} />
-          </button>
-        </form>
-      </section>
-      <section className="work-section settings-section integration-section">
-        <Boxes size={30} />
-        <h2>Built to connect.</h2>
-        <span className="badge draft">ERP integration deferred</span>
-        <p>
-          The billing system continues independently. This workspace manages its
-          own stock until an integration is introduced.
-        </p>
-        <p>
-          The future connection must preserve live billing data and support
-          offline sales.
-        </p>
-        <div className="integration-detail">
-          <span>Inventory source</span>
-          <strong>Local workspace</strong>
-        </div>
-        <div className="integration-detail">
-          <span>ERP connection</span>
-          <strong>Not configured</strong>
-        </div>
-        <div className="integration-detail">
-          <span>Automatic sync</span>
-          <strong>Not active</strong>
-        </div>
-      </section>
-    </div>
   );
 }

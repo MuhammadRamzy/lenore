@@ -55,13 +55,11 @@ case "${1:-start}" in
     bold "All checks passed."
     ;;
   e2e)
-    npm run setup:local
-    npm run build:client
     if [ -z "${PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH:-}" ]; then
       bold "Making sure the Playwright browser is installed…"
       npx playwright install chromium
     fi
-    bold "Browser tests (uses the local demo database)"
+    bold "Browser tests (separate test database with demo samples, port 8788)"
     npm run test:e2e
     ;;
   reset)

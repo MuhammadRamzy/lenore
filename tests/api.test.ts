@@ -2553,3 +2553,307 @@ describe("audit hardening", () => {
     expect(Number(c.number.slice(-4)) - Number(a.number.slice(-4))).toBe(1);
   });
 });
+
+describe("role access matrix", () => {
+  // Every role against every guarded surface. Bodies are deliberately empty:
+  // the role guard must answer before validation does, so an allowed role
+  // gets 400 (bad input) or 2xx/404, and a refused one 401/403.
+  const X = "00000000-0000-4000-8000-000000000000";
+  const admin: [string, string][] = [
+    ["GET", "/admin/products"],
+    ["GET", `/admin/products/${X}/movements`],
+    ["POST", "/admin/products"],
+    ["PUT", `/admin/products/${X}`],
+    ["POST", `/admin/products/${X}/stock`],
+    ["POST", "/admin/products/import"],
+    ["POST", "/admin/stock-count"],
+    ["POST", "/admin/media/by-code?code=X"],
+    ["GET", "/admin/quotes"],
+    ["GET", "/admin/quotations"],
+    ["GET", "/admin/activity"],
+    ["GET", "/admin/analytics"],
+    ["PUT", "/admin/settings"],
+    ["GET", "/admin/catalogue-access"],
+    ["PUT", "/admin/catalogue-access"],
+    ["POST", "/admin/catalogue-access/revoke"],
+    ["GET", "/admin/team"],
+    ["POST", "/admin/team"],
+    ["PUT", `/admin/team/${X}`],
+    ["POST", `/admin/team/${X}/sign-out`],
+    ["GET", "/admin/website"],
+    ["PUT", "/admin/website/settings"],
+    ["GET", "/admin/erp/invoices"],
+    ["GET", "/admin/erp/customers"],
+    ["POST", "/admin/erp/customers"],
+    ["GET", `/admin/erp/customers/${X}/ledger`],
+    ["GET", "/admin/erp/expenses"],
+    ["POST", "/admin/erp/expenses"],
+    ["GET", "/admin/erp/purchases"],
+    ["POST", "/admin/erp/purchases"],
+    ["GET", "/admin/erp/suppliers"],
+    ["GET", "/admin/erp/reports"],
+    ["GET", "/admin/erp/settings"],
+    ["PUT", "/admin/erp/settings"],
+    ["GET", "/admin/erp/shifts"],
+    ["GET", "/admin/erp/price-lists"],
+    ["GET", "/admin/finance/summary"],
+    ["GET", "/admin/reports/business?from=2026-10-01&to=2026-10-31"],
+    ["POST", "/admin/reports/archive"],
+    ["GET", "/admin/reports/archive"],
+    ["PUT", `/admin/reports/archive/${X}/pdf`],
+    ["GET", `/admin/reports/archive/${X}/pdf`],
+  ];
+  const pos: [string, string][] = [
+    ["GET", "/pos/bootstrap?device=device-0001"],
+    ["POST", "/pos/numbers"],
+    ["GET", "/pos/customers"],
+    ["POST", "/pos/customers"],
+    ["GET", "/pos/invoices"],
+    ["POST", "/pos/invoices"],
+    ["GET", `/pos/invoices/${X}`],
+    ["POST", `/pos/invoices/${X}/credit-notes`],
+    ["POST", `/pos/invoices/${X}/payments`],
+    ["POST", "/pos/shifts"],
+    ["GET", `/pos/shifts/${X}`],
+    ["POST", `/pos/shifts/${X}/cash`],
+    ["POST", `/pos/shifts/${X}/close`],
+    ["POST", "/pos/expenses"],
+  ];
+  async function sessionFor(role: "owner" | "admin" | "sales" | "cashier") {
+    const t = crypto.randomUUID();
+    let userId: string | null = null;
+    if (role !== "owner") {
+      userId = crypto.randomUUID();
+      await bindings.DB.prepare(
+        "INSERT INTO staff_users(id,name,phone,password_hash,role,pos_access) VALUES(?,?,?,?,?,?)",
+      )
+        .bind(
+          userId,
+          role,
+          `9${Math.floor(Math.random() * 1e9)}`.padEnd(10, "0"),
+          "pbkdf2$x$y",
+          role === "admin" ? "admin" : "sales",
+          role === "cashier" ? 1 : 0,
+        )
+        .run();
+    }
+    await bindings.DB.prepare(
+      "INSERT INTO sessions(token_hash,expires_at,user_id,role) VALUES(?,?,?,?)",
+    )
+      .bind(
+        await sha256(t),
+        Date.now() + 60000,
+        userId,
+        role === "cashier" ? "sales" : role,
+      )
+      .run();
+    return t;
+  }
+  async function hit(t: string | null, method: string, path: string) {
+    const r = await SELF.fetch(`${base}/api${path}`, {
+      method,
+      headers: {
+        Origin: base,
+        ...(t ? { Cookie: `lenore_session=${t}` } : {}),
+        ...(method === "GET" ? {} : { "Content-Type": "application/json" }),
+      },
+      body: method === "GET" ? undefined : "{}",
+    });
+    await r.body?.cancel();
+    return r.status;
+  }
+  const refused = (s: number) => s === 401 || s === 403;
+
+  it("admin routes: owner and admin only", async () => {
+    const tokens = {
+      anon: null,
+      sales: await sessionFor("sales"),
+      cashier: await sessionFor("cashier"),
+      admin: await sessionFor("admin"),
+      owner: await sessionFor("owner"),
+    };
+    for (const [method, path] of admin) {
+      expect(await hit(tokens.anon, method, path), `${method} ${path}`).toBe(
+        401,
+      );
+      for (const r of ["sales", "cashier"] as const)
+        expect(await hit(tokens[r], method, path), `${r} ${path}`).toBe(403);
+      for (const r of ["admin", "owner"] as const) {
+        const s = await hit(tokens[r], method, path);
+        expect(refused(s), `${r} ${method} ${path} → ${s}`).toBe(false);
+        expect(s, `${r} ${method} ${path}`).toBeLessThan(500);
+      }
+    }
+  });
+  it("billing routes: cashier, admin and owner; never plain sales", async () => {
+    const tokens = {
+      sales: await sessionFor("sales"),
+      cashier: await sessionFor("cashier"),
+      admin: await sessionFor("admin"),
+      owner: await sessionFor("owner"),
+    };
+    for (const [method, path] of pos) {
+      expect(await hit(null, method, path), `anon ${path}`).toBe(401);
+      expect(await hit(tokens.sales, method, path), `sales ${path}`).toBe(403);
+      for (const r of ["cashier", "admin", "owner"] as const) {
+        const s = await hit(tokens[r], method, path);
+        expect(refused(s), `${r} ${method} ${path} → ${s}`).toBe(false);
+        expect(s, `${r} ${method} ${path}`).toBeLessThan(500);
+      }
+    }
+  });
+  it("expired sessions and deactivated staff are anonymous", async () => {
+    const t = await sessionFor("admin");
+    await bindings.DB.prepare("UPDATE staff_users SET active=0").run();
+    expect(await hit(t, "GET", "/admin/products")).toBe(401);
+    const e = crypto.randomUUID();
+    await bindings.DB.prepare(
+      "INSERT INTO sessions(token_hash,expires_at,role) VALUES(?,?,'owner')",
+    )
+      .bind(await sha256(e), Date.now() - 1)
+      .run();
+    expect(await hit(e, "GET", "/admin/products")).toBe(401);
+  });
+});
+
+describe("invoice number gaps", () => {
+  it("collapse into ranges per financial year", async () => {
+    const { numberRanges } = await import("../src/erp");
+    expect(
+      numberRanges([
+        { fy: "26-27", seq: 4 },
+        { fy: "26-27", seq: 2 },
+        { fy: "26-27", seq: 3 },
+        { fy: "26-27", seq: 9 },
+        { fy: "25-26", seq: 7 },
+      ]),
+    ).toEqual(["25-26/7", "26-27/2–4", "26-27/9"]);
+  });
+});
+
+describe("bill arithmetic", () => {
+  it("always balances across thousands of random baskets", async () => {
+    const { priceBill } = await import("../src/erp");
+    let seed = 42;
+    const rand = (n: number) => {
+      seed = (seed * 1103515245 + 12345) % 2 ** 31;
+      return seed % n;
+    };
+    for (let i = 0; i < 2000; i++) {
+      const supply = rand(2) ? "intra" : "inter";
+      const lines = Array.from({ length: 1 + rand(8) }, (_, k) => {
+        const rate = 100 + rand(5_000_000);
+        const qty = 1 + rand(40);
+        return {
+          productId: String(k),
+          qty,
+          rate,
+          discount: rand(3) ? 0 : rand(rate * qty),
+          gstRateBp: [0, 500, 1200, 1800, 2800][rand(5)],
+        };
+      });
+      const b = priceBill(lines, supply);
+      const gross = lines.reduce((n, l) => n + l.rate * l.qty - l.discount, 0);
+      // Inclusive pricing: tax never changes what the customer pays.
+      expect(b.total - b.roundOff).toBe(gross);
+      expect(b.taxable + b.cgst + b.sgst + b.igst + b.roundOff).toBe(b.total);
+      expect(b.total % 100).toBe(0);
+      expect(Math.abs(b.roundOff)).toBeLessThanOrEqual(50);
+      if (supply === "inter") expect(b.cgst + b.sgst).toBe(0);
+      else {
+        expect(b.igst).toBe(0);
+        for (const l of b.lines)
+          expect(Math.abs(l.cgst - l.sgst)).toBeLessThanOrEqual(1);
+      }
+      for (const l of b.lines) {
+        expect(l.taxable).toBeGreaterThanOrEqual(0);
+        expect(l.taxable + l.cgst + l.sgst + l.igst).toBe(l.total);
+      }
+    }
+  });
+});
+
+describe("business report", () => {
+  it("compares whole months, quarters and years with the same span before", async () => {
+    const { previousPeriod } = await import("../src/server/report");
+    expect(previousPeriod("2026-10-01", "2026-10-31")).toMatchObject({
+      from: "2026-09-01",
+      to: "2026-09-30",
+    });
+    expect(previousPeriod("2026-03-01", "2026-03-31")).toMatchObject({
+      from: "2026-02-01",
+      to: "2026-02-28",
+    });
+    expect(previousPeriod("2026-07-01", "2026-09-30")).toMatchObject({
+      from: "2026-04-01",
+      to: "2026-06-30",
+    });
+    expect(previousPeriod("2026-04-01", "2027-03-31")).toMatchObject({
+      from: "2025-04-01",
+      to: "2026-03-31",
+    });
+    // Any other range: the same number of days immediately before.
+    expect(previousPeriod("2026-10-10", "2026-10-19")).toMatchObject({
+      from: "2026-09-30",
+      to: "2026-10-09",
+      days: 10,
+    });
+  });
+  it("ages receivables into the usual buckets", async () => {
+    const { ageing } = await import("../src/report");
+    const rows = [0, 30, 31, 61, 90, 91, 400].map((age, i) => ({
+      number: String(i),
+      date: "",
+      customer: "",
+      due: 100,
+      age,
+    }));
+    expect(ageing(rows).map((b) => [b.bills, b.amount])).toEqual([
+      [2, 200],
+      [1, 100],
+      [2, 200],
+      [2, 200],
+    ]);
+  });
+  it("returns report data and keeps saved reports as unchangeable records", async () => {
+    const data = await request(
+      "/admin/reports/business?from=2026-10-01&to=2026-10-31",
+    );
+    expect(data.status).toBe(200);
+    const r = (await data.json()) as {
+      current: { bills: number };
+      previous: { from: string };
+      stock: { skus: number };
+    };
+    expect(r.previous.from).toBe("2026-09-01");
+    expect(typeof r.current.bills).toBe("number");
+    const reserve = async () =>
+      (await (
+        await request(
+          "/admin/reports/archive",
+          { kind: "month", from: "2026-10-01", to: "2026-10-31" },
+          "POST",
+        )
+      ).json()) as { id: string; reference: string };
+    const first = await reserve();
+    const second = await reserve();
+    expect(first.reference).toMatch(/-RPT-2026-10$/);
+    expect(second.reference).toBe(`${first.reference}-v2`);
+    const put = (id: string, body: string) =>
+      SELF.fetch(`${base}/api/admin/reports/archive/${id}/pdf`, {
+        method: "PUT",
+        headers: { Origin: base, Cookie: `lenore_session=${token}` },
+        body,
+      });
+    expect((await put(first.id, "not a pdf")).status).toBe(400);
+    expect((await put(first.id, "%PDF-1.7 test")).status).toBe(200);
+    expect((await put(first.id, "%PDF-1.7 changed")).status).toBe(409);
+    const list = (await (await request("/admin/reports/archive")).json()) as {
+      id: string;
+    }[];
+    expect(list.map((x) => x.id)).toContain(first.id);
+    expect(list.map((x) => x.id)).not.toContain(second.id);
+    const pdf = await request(`/admin/reports/archive/${first.id}/pdf`);
+    expect(await pdf.text()).toBe("%PDF-1.7 test");
+  });
+});

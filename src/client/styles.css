@@ -1695,13 +1695,6 @@
   .settings-section form > p {
     margin: 10px 0 24px;
   }
-  .integration-section > svg {
-    margin-bottom: 20px;
-    color: var(--olive);
-  }
-  .integration-section .badge {
-    margin-bottom: 20px;
-  }
   .integration-detail {
     display: flex;
     justify-content: space-between;

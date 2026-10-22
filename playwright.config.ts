@@ -11,7 +11,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   use: {
-    baseURL: "http://127.0.0.1:8787",
+    baseURL: "http://127.0.0.1:8788",
     headless: true,
     launchOptions: existsSync(existingChromium)
       ? { executablePath: existingChromium }
@@ -19,8 +19,11 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "npm run dev",
-    url: "http://127.0.0.1:8787",
+    // Own database (.wrangler/e2e) and port, with the demo samples, so tests
+    // never mix with the products in your local workspace.
+    command:
+      "node scripts/setup-local.mjs --persist-to .wrangler/e2e && npm run build:client && wrangler dev --ip 127.0.0.1 --port 8788 --persist-to .wrangler/e2e --var DEMO_MODE:true",
+    url: "http://127.0.0.1:8788",
     reuseExistingServer: true,
     timeout: 60000,
   },

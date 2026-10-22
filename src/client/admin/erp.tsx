@@ -14,6 +14,7 @@ import { Sheet } from "../sales/ui";
 import { CollectForm, ReturnForm } from "../pos/app";
 import { PrintArea, TaxInvoice, ZReport } from "../pos/print";
 import { UpiQr } from "../pos/qr";
+import { BusinessReportPanel } from "./business-report";
 import type { ShiftSummary } from "../pos/store";
 import {
   balanceOf,
@@ -27,6 +28,7 @@ import {
   type PaymentDetails,
   type PaymentMethod,
   type Supplier,
+  numberRanges,
 } from "../../erp";
 import { money, type Product } from "../../shared";
 
@@ -307,7 +309,9 @@ export function BillingPanel() {
                   <button
                     className="row-action"
                     onClick={() =>
-                      api<Invoice>(`/pos/invoices/${i.id}`).then(setOpen)
+                      api<Invoice>(`/pos/invoices/${i.id}`)
+                        .then(setOpen)
+                        .catch((e) => window.alert(errorMessage(e)))
                     }
                   >
                     Open
@@ -2266,9 +2270,25 @@ export function ReportsPanel() {
     : 0;
   return (
     <div className="admin-stack">
-      <div className="table-secondary-tools">
+      <div className="table-secondary-tools report-range">
         <DateRange from={from} to={to} setFrom={setFrom} setTo={setTo} />
+        <div className="segmented-presets" role="group" aria-label="Period">
+          {periodPresets().map(([name, f, t]) => (
+            <button
+              key={name}
+              className={from === f && to === t ? "selected" : ""}
+              aria-pressed={from === f && to === t}
+              onClick={() => {
+                setFrom(f);
+                setTo(t);
+              }}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
       </div>
+      <BusinessReportPanel from={from} to={to} />
       {error && <p className="error banner">{error}</p>}
       {!r ? (
         <p className="muted">Loading reports…</p>
@@ -2302,9 +2322,10 @@ export function ReportsPanel() {
               </div>
               {r.numberGaps.length > 0 && (
                 <p>
-                  Unused reserved invoice numbers (explain or report as
-                  cancelled before filing):{" "}
-                  {r.numberGaps.map((g) => `${g.fy}/${g.seq}`).join(", ")}
+                  {r.numberGaps.length} unused reserved invoice{" "}
+                  {r.numberGaps.length === 1 ? "number" : "numbers"} (explain or
+                  report as cancelled before filing):{" "}
+                  {numberRanges(r.numberGaps).join(", ")}
                 </p>
               )}
               {r.shortfalls.length > 0 && (
@@ -2315,7 +2336,7 @@ export function ReportsPanel() {
               )}
             </section>
           )}
-          <div className="admin-grid">
+          <div className="admin-grid report-grid">
             <ReportTable
               title="Sales by day"
               csv="sales-by-day"
@@ -2351,6 +2372,7 @@ export function ReportsPanel() {
             />
             <ReportTable
               title="HSN summary (GSTR-1)"
+              wide
               csv="hsn-summary"
               head={["HSN", "GST %", "Qty", "Taxable", "CGST", "SGST", "IGST"]}
               rows={r.hsn.map((h) => [
@@ -2374,6 +2396,7 @@ export function ReportsPanel() {
             />
             <ReportTable
               title="B2B invoices (GSTR-1)"
+              wide
               csv="b2b"
               head={[
                 "Invoice",
@@ -2523,15 +2546,20 @@ function ReportTable({
   rows,
   raw,
   csv,
+  wide = false,
 }: {
   title: string;
   head: string[];
   rows: (string | number)[][];
   raw: unknown[][];
   csv: string;
+  /** Many columns: take the full row instead of half. */
+  wide?: boolean;
 }) {
+  const numeric = (c: string | number) =>
+    typeof c === "number" || /^[−-]?₹/.test(String(c));
   return (
-    <section className="work-section">
+    <section className={`work-section report-card${wide ? " wide" : ""}`}>
       <div className="work-section-title report-head">
         <h2>{title}</h2>
         <button
@@ -2551,8 +2579,12 @@ function ReportTable({
         <table className="data-table compact">
           <thead>
             <tr>
-              {head.map((h) => (
-                <th key={h} scope="col">
+              {head.map((h, j) => (
+                <th
+                  key={h}
+                  scope="col"
+                  className={rows[0] && numeric(rows[0][j]) ? "num" : undefined}
+                >
                   {h}
                 </th>
               ))}
@@ -2562,14 +2594,7 @@ function ReportTable({
             {rows.map((r, i) => (
               <tr key={i}>
                 {r.map((c, j) => (
-                  <td
-                    key={j}
-                    className={
-                      typeof c === "number" || /^[−-]?₹/.test(String(c))
-                        ? "num"
-                        : ""
-                    }
-                  >
+                  <td key={j} className={numeric(c) ? "num" : ""}>
                     {c}
                   </td>
                 ))}
@@ -2986,4 +3011,21 @@ function PriceListEditor({
       </form>
     </PanelDialog>
   );
+}
+
+/** This month, last month and this financial year (April–March), as ISO dates. */
+function periodPresets(): [string, string, string][] {
+  const now = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }),
+  );
+  const iso = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const fy = m >= 3 ? y : y - 1;
+  return [
+    ["This month", iso(new Date(y, m, 1)), iso(now)],
+    ["Last month", iso(new Date(y, m - 1, 1)), iso(new Date(y, m, 0))],
+    ["This financial year", iso(new Date(fy, 3, 1)), iso(now)],
+  ];
 }

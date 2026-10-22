@@ -5,7 +5,25 @@ export const business = {
   brand: "Lenore",
   tagline: "Refined Bathroom Living",
   summary:
-    "Bath fittings and sanitary ware from Lenore Trading LLP, Kuttiady, Kerala. Browse the collection, order online or request a quotation.",
+    "Bath fittings and sanitary ware showroom in Kuttiady, Kozhikode, Kerala: taps, showers, health faucets, sinks and bathroom accessories at MRP, with GST invoices and quotations on WhatsApp.",
+  /** Owner-supplied warranty terms (2026-10-22), longest first. */
+  warranty: [
+    { years: 10, part: "CP fittings body", highlight: true },
+    { years: 2, part: "Spindle & head", highlight: false },
+    { years: 1, part: "Accessories", highlight: false },
+  ],
+  /** Towns the showroom serves; named in structured data and on the site. */
+  serves: [
+    "Kuttiady",
+    "Vadakara",
+    "Nadapuram",
+    "Perambra",
+    "Kakkattil",
+    "Thottilpalam",
+    "Kayakkodi",
+    "Velom",
+    "Kozhikode",
+  ],
   phone: "+917511163131",
   phoneDisplay: "+91 75111 63131",
   email: "lenorebathfittings@gmail.com",

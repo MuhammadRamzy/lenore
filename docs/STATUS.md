@@ -1,6 +1,6 @@
 # Lenore status
 
-Updated 2026-10-19.
+Updated 2026-10-22.
 
 **Stage A — website, sales catalogue, quotations, inventory, admin: implemented and verified locally.**
 
@@ -14,6 +14,8 @@ Updated 2026-10-19.
 
 **Audit — complete.** See `docs/AUDIT.md`: 26 findings, 22 fixed, 4 accepted/deferred/owner action.
 
-Verification: typecheck, lint, 68 API tests (workerd), 6 browser tests, axe WCAG 2.1 AA on 32 workspace/counter views and the public surfaces, production dry-run build.
+Verification: typecheck, lint, 73 API tests (workerd), 6 browser tests on an isolated database, axe WCAG 2.1 AA on 32 workspace/counter views and the public surfaces, production dry-run build.
 
-Not done: production Cloudflare resources and secrets (owner access needed), real product data/photos, Firebase billing migration (awaiting credentials via secrets), load test on staging. Nothing has been deployed.
+**Real catalogue (local) — 2026-10-22.** 308 Wetta products with photos/posters, GST 18% and HSN set (owner to confirm with the accountant). WebP uploads with 600 px thumbnails, POS devices (A4/80 mm/USB printing, scanners, camera), keyboard shortcuts, role access matrix tests, SEO and warranty content. See HANDOFF and ADR 0007.
+
+Not done: production Cloudflare resources and secrets (owner access needed), production data import and thumbnail backfill, Firebase billing migration (awaiting credentials via secrets), load test on staging. Nothing has been deployed.

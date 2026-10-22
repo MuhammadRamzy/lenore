@@ -15,6 +15,8 @@ export type PosProduct = {
   stock: number;
   bin: string;
   imageUrl: string | null;
+  /** Missing in bootstraps cached before posters were sent. */
+  posterUrl?: string | null;
 };
 export type ShiftSummary = {
   id: string;
@@ -50,6 +52,8 @@ export type Bootstrap = {
   policy: { admin: boolean; mode: string; capBp: number };
   cashier: string;
   today: string;
+  /** Shows the labelled sample photos for demo SKUs; absent in older caches. */
+  demo?: boolean;
   products: PosProduct[];
   priceLists: { id: string; name: string; discountBp: number }[];
   priceListItems: {

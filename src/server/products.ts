@@ -497,6 +497,27 @@ function imageType(bytes: Uint8Array) {
   if (text(0, 4) === "RIFF" && text(8, 12) === "WEBP") return "image/webp";
   return null;
 }
+/** Each product image may have a 600 px WebP beside it for grids and lists. */
+const thumbKey = (key: string) => `${key}.600`;
+routes.put("/admin/media/:key/thumb", async (c) => {
+  const key = c.req.param("key");
+  const owner = await c.env.DB.prepare(
+    "SELECT 1 FROM products WHERE image_key=? OR poster_key=?",
+  )
+    .bind(key, key)
+    .first();
+  if (!owner) return c.json({ error: "Image not found." }, 404);
+  const bytes = new Uint8Array(await c.req.arrayBuffer());
+  if (bytes.length > 400 * 1024)
+    return c.json({ error: "Thumbnail is too large." }, 413);
+  const type = imageType(bytes);
+  if (type !== "image/webp" && type !== "image/jpeg")
+    return c.json({ error: "Thumbnails must be WebP or JPEG." }, 400);
+  await c.env.MEDIA.put(thumbKey(key), bytes, {
+    httpMetadata: { contentType: type },
+  });
+  return c.json({ saved: true });
+});
 async function storeMedia(
   c: AppContext,
   current: ProductRow,
@@ -525,9 +546,10 @@ async function storeMedia(
       );
     }
     if (current[column])
-      await c.env.MEDIA.delete(current[column]!).catch(() =>
-        console.error("Old media cleanup deferred"),
-      );
+      await c.env.MEDIA.delete([
+        current[column]!,
+        thumbKey(current[column]!),
+      ]).catch(() => console.error("Old media cleanup deferred"));
     return c.json(product(result));
   } catch (error) {
     await c.env.MEDIA.delete(key);
@@ -587,7 +609,10 @@ routes.get("/media/:key", async (c) => {
       (level && level !== "public") ||
       (!p.published && isAdmin(c.get("viewer"))));
   if (!allowed) return c.json({ error: "Image not found." }, 404);
-  const object = await c.env.MEDIA.get(key);
+  // ?w=600 serves the small grid version when one was uploaded.
+  const object =
+    (c.req.query("w") === "600" && (await c.env.MEDIA.get(thumbKey(key)))) ||
+    (await c.env.MEDIA.get(key));
   if (!object) return c.json({ error: "Image not found." }, 404);
   return new Response(object.body, {
     headers: {

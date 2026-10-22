@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Download, Printer, Upload, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Check, Download, Printer, ScanBarcode, Upload, X } from "lucide-react";
 import {
   money,
   movementLabel,
@@ -13,7 +14,10 @@ import {
   type TeamMember,
 } from "../../shared";
 import { api, errorMessage } from "../api";
+import { PHOTO_SIDE, POSTER_SIDE, toWebp, uploadThumb } from "../webp";
 import { Overlay } from "../overlay";
+import { Scanner, scanFeedback } from "../scanner";
+import markUrl from "../pos/lenore-mark-print.png";
 
 const when = (iso: string | null) =>
   iso
@@ -1216,10 +1220,29 @@ export function StockCount({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [operationId] = useState(() => crypto.randomUUID());
+  const [camera, setCamera] = useState(false);
+  const [last, setLast] = useState<{ id?: string; text: string } | null>(null);
   const snapshot = useMemo(
     () => new Map(products.map((p) => [p.id, p])),
     [products],
   );
+  /** One scan = one item on the shelf. Returns false when nothing matches. */
+  function scan(raw: string) {
+    const code = raw.trim();
+    const hit = products.find(
+      (p) =>
+        (p.barcode && p.barcode === code) ||
+        p.code.toLowerCase() === code.toLowerCase(),
+    );
+    if (!hit) {
+      setLast({ text: `${code}: no product has this barcode or code` });
+      return false;
+    }
+    const next = Number(counts[hit.id] || 0) + 1;
+    setCounts((c) => ({ ...c, [hit.id]: String(Number(c[hit.id] || 0) + 1) }));
+    setLast({ id: hit.id, text: `${hit.code} ${hit.name}: ${next} counted` });
+    return true;
+  }
   const entered = Object.entries(counts).filter(([, v]) => v !== "");
   const differences = entered.filter(
     ([id, v]) => Number(v) !== snapshot.get(id)?.stock,
@@ -1263,20 +1286,34 @@ export function StockCount({
               onKeyDown={(e) => {
                 if (e.key !== "Enter") return;
                 e.preventDefault();
-                const exact = products.find(
-                  (p) =>
-                    p.barcode === q.trim() ||
-                    p.code.toLowerCase() === q.trim().toLowerCase(),
-                );
-                if (exact)
-                  setCounts((c) => ({
-                    ...c,
-                    [exact.id]: String(Number(c[exact.id] || 0) + 1),
-                  }));
+                if (!q.trim()) return;
+                scanFeedback(scan(q));
                 setQ("");
               }}
             />
           </label>
+          <div className="count-scan-row">
+            <button className="button" onClick={() => setCamera(true)}>
+              <ScanBarcode size={16} /> Scan with camera
+            </button>
+            {last && (
+              <p
+                className={`count-last ${last.id ? "ok" : "bad"}`}
+                role="status"
+              >
+                {last.text}
+              </p>
+            )}
+          </div>
+          {camera && (
+            <Scanner
+              continuous
+              title="Count by scanning"
+              status={last?.text}
+              onDetect={scan}
+              onClose={() => setCamera(false)}
+            />
+          )}
           <div
             className="data-table-wrap count-table"
             tabIndex={0}
@@ -1304,7 +1341,10 @@ export function StockCount({
                   const v = counts[p.id] ?? "";
                   const diff = v === "" ? null : Number(v) - p.stock;
                   return (
-                    <tr key={p.id}>
+                    <tr
+                      key={p.id}
+                      className={last?.id === p.id ? "scanned" : undefined}
+                    >
                       <td>
                         {p.name}
                         <small className="muted block">{p.code}</small>
@@ -1654,11 +1694,11 @@ export function BulkPhotos({
           <label className="upload-field">
             <Upload size={22} />
             <strong>{busy ? "Uploading…" : "Choose images"}</strong>
-            <span>JPEG, PNG or WebP · up to 5 MB each</span>
+            <span>JPEG, PNG or WebP · saved as WebP</span>
             <input
               type="file"
               multiple
-              accept="image/jpeg,image/png,image/webp"
+              accept="image/*"
               disabled={busy}
               onChange={async (e) => {
                 const files = [...(e.target.files ?? [])];
@@ -1668,23 +1708,42 @@ export function BulkPhotos({
                   const base = file.name.replace(/\.[^.]+$/, "");
                   const poster = /_spec$/i.test(base);
                   const code = base.replace(/_spec$/i, "");
-                  const r = await fetch(
-                    `/api/admin/media/by-code?code=${encodeURIComponent(code)}&slot=${poster ? "poster" : "photo"}`,
-                    {
-                      method: "POST",
-                      body: file,
-                    },
-                  );
-                  const body = (await r.json().catch(() => ({}))) as {
-                    error?: string;
-                  };
-                  out.push({
-                    name: file.name,
-                    ok: r.ok,
-                    message: r.ok
-                      ? `${poster ? "Poster" : "Photo"} for ${code}`
-                      : (body.error ?? "Failed"),
-                  });
+                  try {
+                    const r = await fetch(
+                      `/api/admin/media/by-code?code=${encodeURIComponent(code)}&slot=${poster ? "poster" : "photo"}`,
+                      {
+                        method: "POST",
+                        body: await toWebp(
+                          file,
+                          poster ? POSTER_SIDE : PHOTO_SIDE,
+                        ),
+                      },
+                    );
+                    const body = (await r.json().catch(() => ({}))) as {
+                      error?: string;
+                      imageUrl?: string | null;
+                      posterUrl?: string | null;
+                    };
+                    if (r.ok)
+                      await uploadThumb(
+                        file,
+                        (poster ? body.posterUrl : body.imageUrl) ?? null,
+                      );
+                    out.push({
+                      name: file.name,
+                      ok: r.ok,
+                      message: r.ok
+                        ? `${poster ? "Poster" : "Photo"} for ${code}`
+                        : (body.error ?? "Failed"),
+                    });
+                  } catch (error) {
+                    // One bad file must not stop the rest of the batch.
+                    out.push({
+                      name: file.name,
+                      ok: false,
+                      message: errorMessage(error),
+                    });
+                  }
                   setResults([...out]);
                 }
                 setBusy(false);
@@ -1708,7 +1767,149 @@ export function BulkPhotos({
   );
 }
 
-/** A4 sheet of barcode labels (Code 128) via the print dialog. */
+/** Sets HSN and GST rate on every product in the current view in one go. */
+export function TaxTool({
+  products,
+  onClose,
+  onSaved,
+}: {
+  products: Product[];
+  onClose: () => void;
+  onSaved: (m: string) => void;
+}) {
+  const [hsn, setHsn] = useState("");
+  const [rate, setRate] = useState("18");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const rates = [...new Set(products.map((p) => p.gstRateBp))];
+  return (
+    <Overlay onClose={() => !busy && onClose()}>
+      <div className="panel-shade" onClick={() => !busy && onClose()}>
+        <section
+          className="editor-panel"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="tax-title"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="panel-heading">
+            <h2 id="tax-title">GST &amp; HSN for {products.length} products</h2>
+            <button
+              className="icon-button"
+              aria-label="Close"
+              onClick={onClose}
+            >
+              <X />
+            </button>
+          </div>
+          <p className="muted">
+            Applies to every product in the current view. Filter by category or
+            search first to change a group. Currently:{" "}
+            {rates
+              .map((r) => (r === null ? "no rate" : `${r / 100}%`))
+              .join(", ")}
+            . Confirm rates with your accountant.
+          </p>
+          <form
+            className="tax-form"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBusy(true);
+              setError("");
+              try {
+                const rows = products.map((p) => ({
+                  code: p.code,
+                  name: p.name,
+                  category: p.category,
+                  unit: p.unit,
+                  description: p.description,
+                  pricePaise: p.pricePaise,
+                  lowStock: p.lowStock,
+                  published: p.published,
+                  hsn: hsn || p.hsn,
+                  gstRateBp: Math.round(Number(rate) * 100),
+                  barcode: p.barcode,
+                  reorderQty: p.reorderQty,
+                  bin: p.bin,
+                  costPaise: p.costPaise,
+                }));
+                // The import endpoint upserts by code and never touches stock.
+                for (let i = 0; i < rows.length; i += 400)
+                  await api("/admin/products/import", {
+                    rows: rows.slice(i, i + 400),
+                    dryRun: false,
+                  });
+                onSaved(`GST ${rate}% set on ${rows.length} products.`);
+              } catch (err) {
+                setError(errorMessage(err));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <label>
+              GST rate
+              <select value={rate} onChange={(e) => setRate(e.target.value)}>
+                {["0", "5", "12", "18", "28"].map((r) => (
+                  <option key={r} value={r}>
+                    {r}%
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              HSN code (leave blank to keep each product's)
+              <input
+                inputMode="numeric"
+                pattern={"\\d{4}|\\d{6}|\\d{8}"}
+                value={hsn}
+                onChange={(e) => setHsn(e.target.value.replace(/\D/g, ""))}
+                placeholder="e.g. 8481"
+              />
+            </label>
+            {error && <p className="error">{error}</p>}
+            <button className="button dark" disabled={busy || !products.length}>
+              {busy ? "Saving…" : `Apply to ${products.length} products`}
+            </button>
+          </form>
+        </section>
+      </div>
+    </Overlay>
+  );
+}
+
+/** Label stock: thermal rolls print one label per page; A4 sheets tile them. */
+const LABEL_SIZES = {
+  "thermal-50x25": { name: "Thermal 50 × 25 mm", w: 50, h: 25, cols: 0 },
+  "thermal-38x25": { name: "Thermal 38 × 25 mm", w: 38, h: 25, cols: 0 },
+  "thermal-75x50": { name: "Thermal 75 × 50 mm", w: 75, h: 50, cols: 0 },
+  "a4-21": {
+    name: "A4 · 21 per sheet (63.5 × 38.1)",
+    w: 63.5,
+    h: 38.1,
+    cols: 3,
+  },
+  "a4-24": { name: "A4 · 24 per sheet (64 × 33.9)", w: 64, h: 33.9, cols: 3 },
+  "a4-65": {
+    name: "A4 · 65 per sheet (38.1 × 21.2)",
+    w: 38.1,
+    h: 21.2,
+    cols: 5,
+  },
+} as const;
+type LabelSize = keyof typeof LABEL_SIZES;
+const LABEL_FIELDS = {
+  logo: "Logo",
+  name: "Name",
+  code: "Code",
+  bin: "Bin",
+  price: "Price",
+  barcode: "Barcode",
+} as const;
+type LabelField = keyof typeof LABEL_FIELDS;
+const LABEL_PREFS = "lenore-label-prefs";
+
+/** Barcode labels for thermal printers or A4 sticker sheets, via the print dialog. */
 export function LabelSheet({
   products,
   onClose,
@@ -1716,49 +1917,219 @@ export function LabelSheet({
   products: Product[];
   onClose: () => void;
 }) {
-  const [copies, setCopies] = useState(1);
+  const saved = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem(LABEL_PREFS) ?? "{}") as {
+        size?: LabelSize;
+        fields?: LabelField[];
+      };
+    } catch {
+      return {};
+    }
+  }, []);
+  const [size, setSize] = useState<LabelSize>(
+    saved.size && saved.size in LABEL_SIZES ? saved.size : "thermal-50x25",
+  );
+  const [fields, setFields] = useState(
+    () =>
+      new Set<LabelField>(
+        saved.fields ?? (Object.keys(LABEL_FIELDS) as LabelField[]),
+      ),
+  );
+  const [offer, setOffer] = useState(0);
+  const [qty, setQty] = useState<Record<string, number>>(() =>
+    Object.fromEntries(products.map((p) => [p.id, 1])),
+  );
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        LABEL_PREFS,
+        JSON.stringify({ size, fields: [...fields] }),
+      );
+    } catch {
+      // Preferences are a convenience; printing works without them.
+    }
+  }, [size, fields]);
+  const spec = LABEL_SIZES[size];
   const labels = products.flatMap((p) =>
-    Array.from({ length: copies }, () => p),
+    Array.from({ length: qty[p.id] ?? 0 }, () => p),
+  );
+  const setAll = (n: number) =>
+    setQty(Object.fromEntries(products.map((p) => [p.id, n])));
+  const clamp = (v: string) => Math.max(0, Math.min(500, Number(v) || 0));
+  const show = (f: LabelField) => fields.has(f);
+  // Offer prices round to the rupee, as they are written on the shelf.
+  const offerPrice = (paise: number) =>
+    Math.round((paise * (100 - offer)) / 10000) * 100;
+  const grid = (
+    <div
+      className={`label-grid ${spec.cols ? "label-sheet" : "label-roll"} page-${size}`}
+      style={
+        {
+          "--w": `${spec.w}mm`,
+          "--h": `${spec.h}mm`,
+          "--cols": spec.cols || 1,
+          // Type scales with label height so tiny stock stays legible.
+          "--fs": `${Math.min(9, spec.h / 3.4).toFixed(1)}pt`,
+        } as React.CSSProperties
+      }
+    >
+      {labels.map((p, i) => (
+        <div className="label" key={`${p.id}-${i}`}>
+          {(show("logo") || show("code") || show("bin")) && (
+            <div className="label-top">
+              {show("logo") && <img src={markUrl} alt="" />}
+              <span>
+                {show("code") && p.code}
+                {show("code") && show("bin") && p.bin && " · "}
+                {show("bin") && p.bin}
+              </span>
+            </div>
+          )}
+          {show("name") && <strong className="label-name">{p.name}</strong>}
+          {show("price") && (
+            <div className="label-price">
+              {p.pricePaise !== null && offer > 0 ? (
+                <>
+                  <b>{money(offerPrice(p.pricePaise))}</b>
+                  <s>MRP {money(p.pricePaise)}</s>
+                </>
+              ) : (
+                <b>
+                  {p.pricePaise !== null && "MRP "}
+                  {money(p.pricePaise)}
+                </b>
+              )}
+            </div>
+          )}
+          {show("barcode") && <Barcode value={p.barcode || p.code} />}
+        </div>
+      ))}
+    </div>
   );
   return (
     <Overlay onClose={onClose}>
+      {/* The dialog itself cannot print, so a copy of the labels prints from <body>. */}
+      {createPortal(
+        <div className="label-print-area">{grid}</div>,
+        document.body,
+      )}
       <div className="label-print">
         <div className="label-toolbar no-print">
-          <strong>
-            {labels.length} labels · {products.length} products
-          </strong>
-          <label>
-            Copies each
-            <input
-              type="number"
-              min={1}
-              max={50}
-              value={copies}
-              onChange={(e) =>
-                setCopies(Math.max(1, Math.min(50, Number(e.target.value))))
+          <div className="label-controls">
+            <label>
+              Label size
+              <select
+                value={size}
+                onChange={(e) => setSize(e.target.value as LabelSize)}
+              >
+                {Object.entries(LABEL_SIZES).map(([id, s]) => (
+                  <option key={id} value={id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Offer % off MRP
+              <input
+                type="number"
+                min={0}
+                max={90}
+                value={offer}
+                onChange={(e) =>
+                  setOffer(
+                    Math.max(0, Math.min(90, Number(e.target.value) || 0)),
+                  )
+                }
+              />
+            </label>
+            <label>
+              Copies of every product
+              <input
+                type="number"
+                min={0}
+                max={500}
+                placeholder="Set all"
+                onChange={(e) =>
+                  e.target.value && setAll(clamp(e.target.value))
+                }
+              />
+            </label>
+            <fieldset className="label-fields">
+              <legend>Print</legend>
+              {Object.entries(LABEL_FIELDS).map(([id, name]) => (
+                <label key={id}>
+                  <input
+                    type="checkbox"
+                    checked={fields.has(id as LabelField)}
+                    onChange={() =>
+                      setFields((f) => {
+                        const next = new Set(f);
+                        if (!next.delete(id as LabelField))
+                          next.add(id as LabelField);
+                        return next;
+                      })
+                    }
+                  />
+                  {name}
+                </label>
+              ))}
+            </fieldset>
+          </div>
+          <div className="label-actions">
+            <strong>
+              {labels.length} labels ·{" "}
+              {products.filter((p) => qty[p.id]).length} products
+            </strong>
+            <button
+              className="button dark"
+              disabled={!labels.length}
+              onClick={() => window.print()}
+            >
+              <Printer size={16} /> Print
+            </button>
+            <button className="button" onClick={onClose}>
+              Close
+            </button>
+          </div>
+          <details className="label-products">
+            <summary>Choose products and quantities</summary>
+            <ul>
+              {products.map((p) => (
+                <li key={p.id}>
+                  <input
+                    type="number"
+                    min={0}
+                    max={500}
+                    aria-label={`Labels for ${p.code}`}
+                    value={qty[p.id] ?? 0}
+                    onChange={(e) =>
+                      setQty((q) => ({ ...q, [p.id]: clamp(e.target.value) }))
+                    }
+                  />
+                  <span>
+                    <b>{p.code}</b> {p.name}
+                  </span>
+                  <small>{p.stock} in stock</small>
+                </li>
+              ))}
+            </ul>
+            <button
+              className="button"
+              onClick={() =>
+                setQty(
+                  Object.fromEntries(
+                    products.map((p) => [p.id, Math.max(0, p.stock)]),
+                  ),
+                )
               }
-            />
-          </label>
-          <button className="button dark" onClick={() => window.print()}>
-            <Printer size={16} /> Print
-          </button>
-          <button className="button" onClick={onClose}>
-            Close
-          </button>
+            >
+              One label per item in stock
+            </button>
+          </details>
         </div>
-        <div className="label-grid">
-          {labels.map((p, i) => (
-            <div className="label" key={`${p.id}-${i}`}>
-              <strong>{p.name}</strong>
-              <span>
-                {p.code}
-                {p.bin && ` · ${p.bin}`}
-              </span>
-              <Barcode value={p.barcode || p.code} />
-              <b>{money(p.pricePaise)}</b>
-            </div>
-          ))}
-        </div>
+        {grid}
       </div>
     </Overlay>
   );
@@ -1781,16 +2152,20 @@ function Barcode({ value }: { value: string }) {
     x += Number(w);
   });
   return (
-    <svg
-      className="barcode"
-      viewBox={`0 0 ${x + 10} 40`}
-      role="img"
-      aria-label={`Barcode ${text}`}
-    >
-      {bars.map((b, i) => (
-        <rect key={i} x={b.x} y={0} width={b.w} height={40} />
-      ))}
-    </svg>
+    <figure className="barcode">
+      <svg
+        viewBox={`0 0 ${x + 10} 40`}
+        preserveAspectRatio="none"
+        shapeRendering="crispEdges"
+        role="img"
+        aria-label={`Barcode ${text}`}
+      >
+        {bars.map((b, i) => (
+          <rect key={i} x={b.x} y={0} width={b.w} height={40} />
+        ))}
+      </svg>
+      <figcaption>{text}</figcaption>
+    </figure>
   );
 }
 

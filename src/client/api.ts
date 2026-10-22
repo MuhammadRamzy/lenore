@@ -47,6 +47,9 @@ export async function api<T>(
     result = null;
   }
   if (!response.ok) {
+    // An expired or revoked session anywhere sends the app back to sign-in.
+    if (response.status === 401 && !path.startsWith("/session"))
+      window.dispatchEvent(new Event("lenore:signed-out"));
     const message =
       result &&
       typeof result === "object" &&

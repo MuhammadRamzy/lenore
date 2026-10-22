@@ -29,12 +29,21 @@ export type DisplayImage = {
   srcSet?: string;
   illustrative: boolean;
 };
+/** Small version of an uploaded image for grids and lists (falls back to the original). */
+export const thumb = (url: string) =>
+  url.startsWith("/api/media/") ? `${url}?w=600` : url;
+// Grids pick the 600 px file; large views still get the full photo.
+const uploaded = (url: string): DisplayImage => ({
+  src: url,
+  srcSet: `${thumb(url)} 600w, ${url} 1600w`,
+  illustrative: false,
+});
 /** Uploaded media wins; labelled AI samples appear only for demo SKUs in demo mode. */
 export function productImage(
   p: Pick<CatalogueProduct, "code" | "imageUrl" | "posterUrl">,
   demo: boolean,
 ): DisplayImage | null {
-  if (p.imageUrl) return { src: p.imageUrl, illustrative: false };
+  if (p.imageUrl) return uploaded(p.imageUrl);
   const sample = demo ? demoImages[p.code] : undefined;
   if (sample)
     return {
@@ -42,6 +51,6 @@ export function productImage(
       srcSet: `/images/demo-${sample}-480.webp 480w, /images/demo-${sample}-800.webp 800w`,
       illustrative: true,
     };
-  if (p.posterUrl) return { src: p.posterUrl, illustrative: false };
+  if (p.posterUrl) return uploaded(p.posterUrl);
   return null;
 }
