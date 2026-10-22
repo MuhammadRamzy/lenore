@@ -12,6 +12,7 @@ import {
   Link2,
   MapPin,
   Menu,
+  Clock,
   MessageCircle,
   ChevronDown,
   Phone,
@@ -272,6 +273,11 @@ function Footer() {
             <br />
             {business.address.region}, India
           </address>
+          <p className="footer-hours">
+            {business.hours.display}
+            <br />
+            {business.hours.closed}
+          </p>
           <a href={mapsLink} target="_blank" rel="noopener">
             Get directions
           </a>
@@ -570,7 +576,7 @@ function Home({ page }: { page: Extract<SitePage, { kind: "home" }> }) {
             </h1>
             <p className="lead">
               Taps, showers, sinks and accessories, chosen for quality, finish
-              and value. See them side by side in our showroom in Kuttiady.
+              and value. See them side by side in our showroom.
             </p>
             <div className="hero-actions">
               <a className="btn btn-primary btn-lg" href="/collections">
@@ -712,6 +718,9 @@ function VisitSection({ page }: { page: SitePage }) {
         <address>
           <strong>{business.legalName}</strong>
           <span>{addressLine}</span>
+          <span>
+            {business.hours.display}. {business.hours.closed}.
+          </span>
         </address>
         <p className="visit-serves">
           Serving {business.serves.slice(0, -1).join(", ")} and across{" "}
@@ -1065,6 +1074,16 @@ function Contact({ page }: { page: SitePage }) {
                   <br />
                   {business.address.locality}, {business.address.district},{" "}
                   {business.address.region}
+                </dd>
+              </div>
+              <div>
+                <dt>
+                  <Clock size={18} aria-hidden="true" /> Hours
+                </dt>
+                <dd>
+                  {business.hours.display}
+                  <br />
+                  <span className="muted">{business.hours.closed}</span>
                 </dd>
               </div>
               <div>

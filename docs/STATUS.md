@@ -24,4 +24,6 @@ Price lists now apply to quotations for saved customers (ADR 0009). Public websi
 
 Not done: photos and thumbnail backfill, custom domain, Firebase billing migration (awaiting credentials via secrets), load test on staging. Nothing has been deployed.
 
-**Lenore image export — in progress (Codex, 2026-10-22).** All 352 sources inventoried; Lenore square photos and portrait posters are saved progressively to `~/Downloads/Lenore-Product-Visuals`. User requested Downloads first, app replacement later. Parallel generation and source/code/price/geometry review are underway; see `PROGRESS.txt` and correction reports in the export folder.
+**Lenore image export — incomplete, service quota (Codex,2026-10-22).**327/359target outputs saved in `~/Downloads/Lenore-Product-Visuals`, all file/aspect/hash checks passed.32outputs plus4targeted corrections remain, including7new photos for poster-only products. Built-in image-generation daily quota reports reset23October2026,14:12:30IST. Resume instructions/queue and source/correction reports are in Downloads; no automatic continuation scheduled. This export made no app/deployment changes.
+
+**Instagram export organisation (Codex,2026-10-22):**327saved images copied into30categoryfolders in Downloads; allhashesverified.30categorycoverthumbnails queuedfortomorrow, inadditiontoremainingproductimagework. Categorycarouselorders and restartnotes saved.

@@ -2058,6 +2058,13 @@ describe("search engine rendering", () => {
     expect(map).toContain("/privacy</loc>");
     expect(map).toContain("/terms</loc>");
   });
+  it("publishes the showroom hours on Visit us and in business data", async () => {
+    const html = await (await page("/contact")).text();
+    expect(html).toContain("Monday to Saturday, 9:30 am to 7:00 pm");
+    expect(html).toContain("Closed on Sunday");
+    expect(html).toContain('"opens":"09:30","closes":"19:00"');
+    expect(html).not.toContain("https://schema.org/Sunday");
+  });
   it("renders the home page with metadata, structured business data and content", async () => {
     await create({
       published: true,

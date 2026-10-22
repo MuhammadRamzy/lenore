@@ -15,6 +15,12 @@ const font = readFileSync("public/fonts/report-sans-bold.ttf").toString(
 
 // Brand colours (docs/brand/colour): catalogue on Stone, admin on Slate, billing on Bronze.
 const apps = {
+  // Browser tab icon: a white tile so the mark shows on dark tab strips too.
+  favicon: {
+    bg: ["#FFFFFF", "#FFFFFF"],
+    mark: ["#C99A63", "#7A4E26"],
+    radius: 112,
+  },
   icon: {
     bg: ["#F6F5F2", "#F6F5F2"],
     mark: ["#C99A63", "#7A4E26"],
@@ -63,19 +69,21 @@ function svg(app, size, scale) {
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${a.bg[0]}"/><stop offset="1" stop-color="${a.bg[1]}"/></linearGradient>
     <linearGradient id="m" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${a.mark[0]}"/><stop offset="1" stop-color="${a.mark[1]}"/></linearGradient>
   </defs>
-  <rect width="512" height="512" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="${a.radius ?? 0}" fill="url(#bg)"/>
   <path transform="translate(${x} ${y}) scale(${k})" fill="url(#m)" d="${MARK}"/>
   ${glyph}
 </svg>`;
 }
 
 const files = [];
-for (const app of Object.keys(apps)) {
+for (const app of Object.keys(apps).filter((a) => a !== "favicon")) {
   files.push([`${app}-192.png`, app, 192, 1]);
   files.push([`${app}-512.png`, app, 512, 1]);
   files.push([`${app}-maskable-512.png`, app, 512, 0.84]);
 }
 files.push(["apple-touch-icon.png", "icon", 180, 0.9]);
+files.push(["favicon-48.png", "favicon", 48, 1.3]);
+files.push(["favicon-96.png", "favicon", 96, 1.3]);
 
 const local = join(
   homedir(),
@@ -88,10 +96,10 @@ const page = await browser.newPage();
 for (const [name, app, size, scale] of files) {
   await page.setViewportSize({ width: size, height: size });
   await page.setContent(
-    `<body style="margin:0">${svg(app, size, scale)}</body>`,
+    `<body style="margin:0;background:transparent">${svg(app, size, scale)}</body>`,
   );
   await page.evaluate(() => document.fonts.ready);
-  await page.screenshot({ path: `public/icons/${name}` });
+  await page.screenshot({ path: `public/icons/${name}`, omitBackground: true });
   console.log(`public/icons/${name}`);
 }
 await browser.close();

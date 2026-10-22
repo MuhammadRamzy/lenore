@@ -3282,3 +3282,9 @@ html {
     bottom: calc(76px + var(--safe-b));
   }
 }
+.footer-hours {
+  margin: 10px 0 12px;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.55;
+}

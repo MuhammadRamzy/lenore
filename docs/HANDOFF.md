@@ -1,5 +1,18 @@
 # Handoff
 
+## Claude · 2026-10-22 · Hours, favicon, hero copy
+
+- Showroom hours (owner): Monday to Saturday 9:30 am to 7 pm, closed Sunday. In `business.hours`; shown on Visit us, footer and showroom section; `openingHoursSpecification` in business data.
+- Favicon redrawn on a white rounded tile (48 and 96 px) via `scripts/make-icons.mjs`; service worker cache v5.
+- Hero copy: "See them side by side in our showroom." (no place name, owner).
+- Checks: 82 API + 10 browser tests. Deployed (9d543d94).
+
+## Codex · 2026-10-22 · Instagram category folders and tomorrow’s covers
+
+- Copied all327saved images into30catalogue-categoryfolders under `~/Downloads/Lenore-Product-Visuals/instagram-categories/`, preserving masterexports. Eachhas product-photos/,posters/,thumbnail/ and carousel-order.csv (coverfirst,thenonepreferredimageperproduct;missing/correctionstatusesexplicit). Verifiedall327copyhashes.
+- Userrequestfortomorrow:generateoneLenore-brandedcategorycoverforeachof30categories, thenincludeallcategoryproductsincarousels. Queue:`category-thumbnail-queue.json`; coversadditionalto359productoutputs. Existingratiosdiffer,socarouselexportmustuseconsistentframingwithoutproductdistortion;batchlargecategoriesasneeded.
+- Durable restartnotesupdated. Rerun `organize-categories.py` afternewimages/correctionsarrive. Noimagegeneration/appchangesinthisstep.
+
 ## Claude · 2026-10-22 · Website identity, navigation, Visit us, legal, SEO (wrap-up)
 
 - Hero rebuilt on Stone: brand line, spotlight of one product at a time + drifting filmstrip, 24 random photographed products per request (ADR 0011). Dark hero and photo wall removed.
@@ -8,7 +21,7 @@
 - Legal: `/privacy`, `/terms` (AI image notice only there, per owner), footer links, sitemap, breadcrumbs. SEO: collection lastmod in sitemap, brand-led home description.
 - Speed: page ~12 KB HTML, 85 KB JS, 12 KB CSS, images lazy. Slow first bytes were this laptop's route to workers.dev (static files equally slow; cloudflare.com fast); the custom domain + edge cache will be faster.
 - Checks: 81 API + 10 browser tests, axe on every public page (desktop/phone), live check. Deployed (a64174b1).
-- **Next:** owner to give opening hours, have legal text reviewed, set Featured products, confirm price mismatches on 5 posters, point Hostinger nameservers to Cloudflare (then Stage 2 in DEPLOYMENT.md). Refresh DESIGN.md. Nothing committed yet.
+- **Next:** owner to have legal text reviewed, set Featured products, confirm price mismatches on 5 posters, point Hostinger nameservers to Cloudflare (then Stage 2 in DEPLOYMENT.md). Refresh DESIGN.md. Nothing committed yet.
 
 ## Claude · 2026-10-22 · Public pages audit and cart polish
 
@@ -41,11 +54,13 @@
 - DB efficiency (ADR 0010): production D1 insights showed the catalogue poll reading every product; migration 0014 adds a one-row catalogue version. Website photos are edge-cached. Other hot queries already use indexes (1–3 rows read); no queries run inside loops.
 - Checks: 79 API + 9 browser tests, typecheck, lint. Migration 0014 applied in production; deployed.
 
-## Codex · 2026-10-22 · Lenore image export in progress
+## Codex · 2026-10-22 · Lenore export stopped by image-generation quota
 
-- User scope: Downloads folder first, app replacement later; logo also on square product photos. All 352 local sources (289 photo slots, 63 poster slots; 308 records) copied and OCR archived under `~/Downloads/Lenore-Product-Visuals`; `catalogue-manifest.json`, `product-information.json`, per-image prompts and progress accompany outputs.
-- Three disjoint conversion queues run in parallel after explicit user approval; output count is in `PROGRESS.txt`. Current metadata writes use a lock. Review reports track corrected codes, prices, old brand engraving, props and exact drain-slot counts. FTR 6351 retains the source towel because hidden construction cannot be verified; KRS 601 five slots are correct. SH 108A shared-advert variant mismatch is being corrected by the audit worker.
-- This Codex export makes no app/database/production changes. Claude's separate image deployment is recorded below. Source printed prices take priority in artwork; catalogue conflicts must be reconciled separately before uploads. Full final integrity/hash/coverage audit remains pending.
+- User explicitly requested pausing and continuing tomorrow; durable restart note is `~/Downloads/Lenore-Product-Visuals/CONTINUE-TOMORROW.md`.
+- Downloads-first export: `~/Downloads/Lenore-Product-Visuals`.327 generated outputs saved (269 square photos,58 portrait posters); target359 after latest request adds7photos for poster-only RSD01/02/03/04/05/07/08. Original352sources and OCR archived,308catalogue records extracted;12records have no source media. Official logo included on square photos per user override.
+- Built-in image_gen returnedHTTP429 `usage_limit_reached` (Plus1440-minute window); reported reset2026-10-23 14:12:30IST, Unix1792744950.32outputs still missing plus4saved outputs need correction. Exact `resume-queue.json` and `RESUME.md` in Downloads. No automatic background continuation scheduled. Use built-in tool after access returns; no CLI fallback was authorized.
+- Pending corrections: SH108Aphoto duplicate views; SH108Aposter wrong shared-advert rectangular hero (use actual square A photo); SH103Aposter wrong shared-advert head/omitted arm (use actual6x6nozzlephoto+arm); SC106photo old ISTS lettering. Other code/price/branding/slot/prop corrections saved. FTR6351 towel is a source-limited exception; KRS601 original5slots match. Artwork source prices can differ from catalogue; reconcile separately. Source SL103 advert incorrectly printsSL104; catalogue identity used and discrepancy documented.
+- Checks: all327PNGs decode, dimensions/aspect valid, Downloads SHA256 copies identical (`export-file-checks.json`);58poster text audit plus visual adjudications in reports. Raw OCR is not authoritative. AR102poster exact original prompt was not archived; provenance note is explicit. This export changed no app/database/production; Claude separately deployed a subset as recorded below. Finish remaining tasks, audit all359, sync metadata, then update status.
 
 ## Claude · 2026-10-22 · Product images uploaded to production
 

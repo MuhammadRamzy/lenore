@@ -320,8 +320,20 @@ function businessLd(base: string) {
     priceRange: "₹₹",
     currenciesAccepted: "INR",
     paymentAccepted: "Cash, UPI, Card, Bank transfer",
+    openingHoursSpecification: {
+      "@type": "OpeningHoursSpecification",
+      dayOfWeek: business.hours.days.map((d) => `https://schema.org/${d}`),
+      opens: business.hours.opens,
+      closes: business.hours.closes,
+    },
     contactPoint: {
       "@type": "ContactPoint",
+      hoursAvailable: {
+        "@type": "OpeningHoursSpecification",
+        dayOfWeek: business.hours.days.map((d) => `https://schema.org/${d}`),
+        opens: business.hours.opens,
+        closes: business.hours.closes,
+      },
       telephone: business.phone,
       email: business.email,
       contactType: "sales",

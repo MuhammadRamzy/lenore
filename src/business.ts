@@ -39,6 +39,14 @@ export const business = {
   },
   /** Showroom location from the owner (11°38'56.8"N 75°43'45.0"E, 2026-10-22). */
   geo: { lat: 11.649111, lng: 75.729167 },
+  /** Showroom hours from the owner (2026-10-22): Monday to Saturday, closed Sunday. */
+  hours: {
+    days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+    opens: "09:30",
+    closes: "19:00",
+    display: "Monday to Saturday, 9:30 am to 7:00 pm",
+    closed: "Closed on Sunday",
+  },
 } as const;
 
 export const addressLine = [
