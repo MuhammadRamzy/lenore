@@ -84,8 +84,26 @@ type Line = {
   qty: number;
   rate: number;
   discount: number;
+  /** Discount as a percentage in basis points (1000 = 10%); when set it decides `discount`. */
+  pct?: number;
   /** True once the cashier types a price, so customer price lists stop overriding it. */
   manual: boolean;
+};
+/** A percentage discount follows the line: change qty or rate and the rupees follow. */
+const effective = (l: Line): Line =>
+  l.pct === undefined
+    ? l
+    : {
+        ...l,
+        discount: Math.min(
+          l.rate * l.qty,
+          Math.round((l.rate * l.qty * l.pct) / 10000),
+        ),
+      };
+/** "10%" or "10 %" → 1000 basis points; plain numbers are rupees. */
+const parsePercent = (v: string) => {
+  const m = /^\s*(\d{1,3}(?:\.\d{1,2})?)\s*%\s*$/.exec(v);
+  return m ? Math.min(10000, Math.round(Number(m[1]) * 100)) : null;
 };
 type Payment = {
   id: string;
@@ -369,6 +387,9 @@ function Counter({
   const [printMode, setPrintMode] = useState<PrintMode>("receipt");
   const search = useRef<HTMLInputElement>(null);
   const billRef = useRef<HTMLElement>(null);
+  /** Phones show one pane at a time: the product grid or the bill. */
+  const [pane, setPane] = useState<"products" | "bill">("products");
+  const narrow = () => window.matchMedia("(max-width: 900px)").matches;
   const [camera, setCamera] = useState(false);
   const [lastScan, setLastScan] = useState("");
   const policy = boot.policy;
@@ -463,6 +484,11 @@ function Counter({
             },
           ],
     );
+    // On a phone the bill is on the other tab, so confirm each item added.
+    if (narrow()) {
+      const had = lines.find((l) => l.productId === p.id)?.qty ?? 0;
+      setToast(`Added ${p.name}${had ? ` (now ${had + qty})` : ""}`);
+    }
   }
   function chooseCustomer(c: Customer | null) {
     setCustomer(c);
@@ -490,8 +516,9 @@ function Counter({
     customer && customer.stateCode !== boot.settings.stateCode
       ? "inter"
       : "intra";
+  const priced = lines.map(effective);
   const bill = priceBill(
-    lines.map((l) => ({
+    priced.map((l) => ({
       ...l,
       gstRateBp: byId.get(l.productId)?.gstRateBp ?? 0,
     })),
@@ -505,7 +532,7 @@ function Counter({
       ? 0
       : Math.floor((base * l.qty * (10000 - policy.capBp)) / 10000);
   };
-  const problems = lines.flatMap((l) => {
+  const problems = priced.flatMap((l) => {
     const p = byId.get(l.productId)!;
     const out: string[] = [];
     if (p.pricePaise !== null && l.rate > p.pricePaise)
@@ -590,7 +617,7 @@ function Counter({
       customerId: customer?.id ?? null,
       walkIn,
       quotationId: quotation?.id ?? null,
-      lines: lines.map(({ productId, qty, rate, discount }) => ({
+      lines: priced.map(({ productId, qty, rate, discount }) => ({
         productId,
         qty,
         rate,
@@ -764,7 +791,28 @@ function Counter({
           </button>
         </nav>
       </header>
-      <div className="pos-body">
+      <div className="pos-tabs" role="tablist" aria-label="Billing view">
+        <button
+          role="tab"
+          aria-selected={pane === "products"}
+          onClick={() => setPane("products")}
+        >
+          Products
+        </button>
+        <button
+          role="tab"
+          aria-selected={pane === "bill"}
+          onClick={() => setPane("bill")}
+        >
+          Bill
+          {lines.length > 0 && (
+            <span className="pos-tab-count">
+              {lines.reduce((n, l) => n + l.qty, 0)} · {money(bill.total)}
+            </span>
+          )}
+        </button>
+      </div>
+      <div className={`pos-body show-${pane}`}>
         <section className="pos-catalog" aria-label="Products">
           <form
             className="search"
@@ -987,27 +1035,75 @@ function Counter({
                         }
                       />
                     </label>
-                    <label className="mini-field">
-                      <span>Disc</span>
+                    <div className="mini-field disc-field">
+                      <button
+                        type="button"
+                        className="disc-unit"
+                        aria-label={
+                          l.pct === undefined
+                            ? `Switch ${p.code} discount to percent`
+                            : `Switch ${p.code} discount to rupees`
+                        }
+                        onClick={() =>
+                          l.pct === undefined
+                            ? update({
+                                pct:
+                                  l.rate * l.qty
+                                    ? Math.round(
+                                        (l.discount * 10000) / (l.rate * l.qty),
+                                      )
+                                    : 0,
+                              })
+                            : update({
+                                pct: undefined,
+                                discount: effective(l).discount,
+                              })
+                        }
+                      >
+                        {l.pct === undefined ? "Disc ₹" : "Disc %"}
+                      </button>
                       <input
                         inputMode="decimal"
                         aria-label={`Discount for ${p.code}`}
-                        defaultValue={l.discount ? paiseInput(l.discount) : ""}
-                        key={`${l.productId}-d-${l.discount}`}
+                        placeholder={l.pct === undefined ? "₹ or %" : "%"}
+                        defaultValue={
+                          l.pct !== undefined
+                            ? l.pct
+                              ? String(l.pct / 100)
+                              : ""
+                            : l.discount
+                              ? paiseInput(l.discount)
+                              : ""
+                        }
+                        key={`${l.productId}-d-${l.discount}-${l.pct}`}
                         onFocus={(e) => e.currentTarget.select()}
                         onKeyDown={(e) =>
                           e.key === "Enter" && e.currentTarget.blur()
                         }
-                        onBlur={(e) =>
-                          update({
-                            discount: Math.max(
-                              0,
-                              rupeesToPaise(e.target.value || "0"),
-                            ),
-                          })
-                        }
+                        onBlur={(e) => {
+                          const v = e.target.value.trim();
+                          const typedPct = parsePercent(v);
+                          if (typedPct !== null || l.pct !== undefined)
+                            update({
+                              pct:
+                                typedPct ??
+                                Math.min(
+                                  10000,
+                                  Math.max(0, Math.round(Number(v || 0) * 100)),
+                                ),
+                            });
+                          else
+                            update({
+                              discount: Math.max(0, rupeesToPaise(v || "0")),
+                            });
+                        }}
                       />
-                    </label>
+                      {l.pct !== undefined && l.pct > 0 && (
+                        <small className="disc-amount">
+                          −{money(effective(l).discount)}
+                        </small>
+                      )}
+                    </div>
                   </div>
                 </li>
               );
@@ -1018,6 +1114,27 @@ function Counter({
               </li>
             )}
           </ul>
+          {lines.length > 0 && (
+            <label className="mini-field bill-disc">
+              <span>Discount on all items %</span>
+              <input
+                inputMode="decimal"
+                placeholder="0"
+                aria-label="Discount percentage on all items"
+                key={`all-${lines.length}`}
+                onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                onBlur={(e) => {
+                  const v = e.target.value.trim().replace("%", "");
+                  if (!v) return;
+                  const pct = Math.min(
+                    10000,
+                    Math.max(0, Math.round(Number(v) * 100) || 0),
+                  );
+                  setLines((ls) => ls.map((x) => ({ ...x, pct })));
+                }}
+              />
+            </label>
+          )}
           <div className="pos-totals">
             <div>
               <span>Taxable</span>
@@ -1073,16 +1190,19 @@ function Counter({
         </section>
       </div>
       {lines.length > 0 && (
-        // Phones: the bill sits below the products, so keep the total in reach.
+        // Phones: total and Pay stay in reach on both tabs.
         <div className="pos-mobile-bar">
           <button
             className="pos-mobile-sum"
-            onClick={() =>
-              billRef.current?.scrollIntoView({ behavior: "smooth" })
-            }
+            onClick={() => {
+              setPane(pane === "bill" ? "products" : "bill");
+              window.scrollTo({ top: 0 });
+            }}
           >
             <small>
-              {lines.reduce((n, l) => n + l.qty, 0)} items · view bill
+              {pane === "bill"
+                ? "+ Add more items"
+                : `${lines.reduce((n, l) => n + l.qty, 0)} items · view bill`}
             </small>
             <b>{money(bill.total)}</b>
           </button>

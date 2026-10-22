@@ -85,7 +85,8 @@
   background: var(--bg);
   font-size: 17px;
 }
-.pos-mobile-bar {
+.pos-mobile-bar,
+.pos-tabs {
   display: none;
 }
 .pos-grid {
@@ -369,6 +370,56 @@ span.pos-thumb {
   }
   .pos-lines {
     overflow: visible;
+  }
+  .pos-bar {
+    position: static;
+  }
+  /* Phones: one pane at a time, switched by tabs under the header. */
+  .pos-tabs {
+    position: sticky;
+    top: 0;
+    z-index: 15;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    padding: 6px 12px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+  }
+  .pos-tabs button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 48px;
+    line-height: 1.2;
+    border-radius: 10px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .pos-tabs button[aria-selected="true"] {
+    background: var(--ink);
+    color: var(--bg);
+  }
+  .pos-tab-count {
+    font-size: 11.5px;
+    font-weight: 500;
+    opacity: 0.85;
+  }
+  .pos-body.show-products .pos-bill,
+  .pos-body.show-bill .pos-catalog {
+    display: none;
+  }
+  /* The bill has its own Pay button; the bar is for the product grid. */
+  .pos-body.show-bill + .pos-mobile-bar {
+    display: none;
+  }
+  .pos-line-controls {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding-left: 0;
+  }
+  .pos-line-controls .disc-field {
+    grid-column: 1 / -1;
   }
   .pos-mobile-bar {
     position: sticky;
@@ -669,4 +720,38 @@ span.pos-thumb {
 }
 .pos-catalog .search input {
   padding-right: 56px;
+}
+/* Discount: tap the label to switch between rupees and percent. */
+.pos .disc-field {
+  position: relative;
+  padding-left: 0;
+}
+.pos .disc-unit {
+  flex: none;
+  align-self: stretch;
+  padding: 0 8px;
+  border-right: 1px solid var(--line);
+  border-radius: 10px 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+}
+.pos .disc-unit:hover {
+  background: var(--accent-soft);
+}
+.pos .disc-amount {
+  position: absolute;
+  right: 6px;
+  bottom: -15px;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.pos .bill-disc {
+  justify-content: space-between;
+  padding: 0 0 0 12px;
+  margin-top: 4px;
+}
+.pos .bill-disc input {
+  width: 80px;
 }

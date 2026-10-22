@@ -70,6 +70,40 @@ function Crash({ loadFailed = false }: { loadFailed?: boolean }) {
     </main>
   );
 }
+// A mouse wheel only scrolls vertically, so sideways rows (category chips,
+// wide tables) would need a touchpad. Turn the wheel sideways over them, and
+// hand control back to the page once the row reaches its end.
+window.addEventListener(
+  "wheel",
+  (e) => {
+    if (e.ctrlKey || e.shiftKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX))
+      return;
+    let el = e.target instanceof Element ? e.target : null;
+    while (el && el !== document.body) {
+      const style = getComputedStyle(el);
+      if (
+        /(auto|scroll)/.test(style.overflowY) &&
+        el.scrollHeight > el.clientHeight + 1
+      )
+        return;
+      if (
+        /(auto|scroll)/.test(style.overflowX) &&
+        el.scrollWidth > el.clientWidth + 1
+      ) {
+        const atStart = el.scrollLeft <= 0 && e.deltaY < 0;
+        const atEnd =
+          el.scrollLeft + el.clientWidth >= el.scrollWidth - 1 && e.deltaY > 0;
+        if (atStart || atEnd) return;
+        el.scrollLeft += e.deltaY;
+        e.preventDefault();
+        return;
+      }
+      el = el.parentElement;
+    }
+  },
+  { passive: false },
+);
+
 // Installable app shell for the catalogue and workspace (secure contexts only).
 if ("serviceWorker" in navigator && !data && window.isSecureContext)
   void navigator.serviceWorker.register("/sw.js").catch(() => undefined);
