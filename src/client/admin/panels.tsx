@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, Download, Printer, ScanBarcode, Upload, X } from "lucide-react";
+import {
+  Check,
+  Download,
+  Plus,
+  Printer,
+  ScanBarcode,
+  Upload,
+  X,
+} from "lucide-react";
 import {
   money,
   movementLabel,
@@ -16,7 +24,7 @@ import {
 import { api, errorMessage } from "../api";
 import { PHOTO_SIDE, POSTER_SIDE, toWebp, uploadThumb } from "../webp";
 import { Overlay } from "../overlay";
-import { Scanner, scanFeedback } from "../scanner";
+import { Scanner, repeatGuard, scanFeedback } from "../scanner";
 import markUrl from "../pos/lenore-mark-print.png";
 
 const when = (iso: string | null) =>
@@ -1226,9 +1234,18 @@ export function StockCount({
     () => new Map(products.map((p) => [p.id, p])),
     [products],
   );
-  /** One scan = one item on the shelf. Returns false when nothing matches. */
+  // One physical scan counts once, whether from the camera or a hand scanner.
+  const [fresh] = useState(() => repeatGuard());
+  /** One scan = one item on the shelf. False when nothing matches; null for an ignored repeat. */
   function scan(raw: string) {
     const code = raw.trim();
+    if (!fresh(code.toLowerCase())) {
+      setLast((l) => ({
+        id: l?.id,
+        text: "Same barcode read again: ignored. Tap “1 more” for another item.",
+      }));
+      return null;
+    }
     const hit = products.find(
       (p) =>
         (p.barcode && p.barcode === code) ||
@@ -1238,10 +1255,13 @@ export function StockCount({
       setLast({ text: `${code}: no product has this barcode or code` });
       return false;
     }
+    addOne(hit);
+    return true;
+  }
+  function addOne(hit: Product) {
     const next = Number(counts[hit.id] || 0) + 1;
     setCounts((c) => ({ ...c, [hit.id]: String(Number(c[hit.id] || 0) + 1) }));
     setLast({ id: hit.id, text: `${hit.code} ${hit.name}: ${next} counted` });
-    return true;
   }
   const entered = Object.entries(counts).filter(([, v]) => v !== "");
   const differences = entered.filter(
@@ -1287,7 +1307,8 @@ export function StockCount({
                 if (e.key !== "Enter") return;
                 e.preventDefault();
                 if (!q.trim()) return;
-                scanFeedback(scan(q));
+                const result = scan(q);
+                if (result !== null) scanFeedback(result);
                 setQ("");
               }}
             />
@@ -1303,6 +1324,16 @@ export function StockCount({
               >
                 {last.text}
               </p>
+            )}
+            {last?.id && (
+              <button
+                type="button"
+                className="button"
+                title="Another of the same product (repeat scans within 2 seconds are ignored)"
+                onClick={() => addOne(snapshot.get(last.id!)!)}
+              >
+                <Plus size={16} /> 1 more
+              </button>
             )}
           </div>
           {camera && (

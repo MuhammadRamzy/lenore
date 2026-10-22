@@ -1,5 +1,11 @@
 # Handoff
 
+## Claude · 2026-10-22 · Stock count repeats, new products from purchases
+
+- Stock count: `repeatGuard` (src/client/scanner.tsx) ignores the same code re-read within 2.5 s (sliding), for camera and hand scanners; the camera also needs the code gone 1.5 s before re-reading. Ignored reads show a hint instead of a false success; "1 more" adds another of the last product.
+- Purchases: "New product" from the purchase bill (code/name/collection/unit/MRP/GST/HSN/barcode); created as a draft (not published) and added to the bill.
+- Checks: 82 API + 11 browser tests. Deployed.
+
 ## Claude · 2026-10-22 · Hours, favicon, hero copy
 
 - Showroom hours (owner): Monday to Saturday 9:30 am to 7 pm, closed Sunday. In `business.hours`; shown on Visit us, footer and showroom section; `openingHoursSpecification` in business data.
@@ -8,6 +14,8 @@
 - Checks: 82 API + 10 browser tests. Deployed (9d543d94).
 
 ## Codex · 2026-10-22 · Instagram category folders and tomorrow’s covers
+
+- Latest:all30categoryfolders now include `CAPTION.txt` with category copy and owner-supplied `https://lenoretrading.com`; consolidated `INSTAGRAM-CAPTIONS.md` and captionchecks saved in Downloads. Verified30/30URLpresence and captionlengths.
 
 - Copied all327saved images into30catalogue-categoryfolders under `~/Downloads/Lenore-Product-Visuals/instagram-categories/`, preserving masterexports. Eachhas product-photos/,posters/,thumbnail/ and carousel-order.csv (coverfirst,thenonepreferredimageperproduct;missing/correctionstatusesexplicit). Verifiedall327copyhashes.
 - Userrequestfortomorrow:generateoneLenore-brandedcategorycoverforeachof30categories, thenincludeallcategoryproductsincarousels. Queue:`category-thumbnail-queue.json`; coversadditionalto359productoutputs. Existingratiosdiffer,socarouselexportmustuseconsistentframingwithoutproductdistortion;batchlargecategoriesasneeded.

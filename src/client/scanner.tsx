@@ -12,6 +12,21 @@ declare global {
 export const cameraScanSupported = () =>
   typeof window !== "undefined" && !!window.BarcodeDetector;
 
+/**
+ * Drops repeat reads of the same code: hand scanners re-read a barcode held
+ * under them, and cameras briefly lose and regain it. A repeat within `ms` of
+ * the previous read is ignored, and each repeat extends the window.
+ */
+export function repeatGuard(ms = 2500) {
+  let last = { code: "", at: 0 };
+  return (code: string) => {
+    const now = Date.now();
+    const repeat = code === last.code && now - last.at < ms;
+    last = { code, at: now };
+    return !repeat;
+  };
+}
+
 /** Short beep and buzz so a scan is noticed without looking at the screen. */
 export function scanFeedback(ok: boolean) {
   try {
@@ -43,8 +58,8 @@ export function Scanner({
   title = "Scan barcode",
   status,
 }: {
-  /** Return false when the code matched nothing, for error feedback. */
-  onDetect: (code: string) => boolean | void;
+  /** Return false when the code matched nothing, null when it was a repeat to ignore. */
+  onDetect: (code: string) => boolean | void | null;
   onClose: () => void;
   continuous?: boolean;
   title?: string;
@@ -94,19 +109,27 @@ export function Scanner({
           try {
             const code = (await detector.detect(video.current!))[0]?.rawValue;
             const now = Date.now();
-            if (code && code === last.code && now - last.seen < 1000) {
+            if (code && code === last.code && now - last.seen < 1500) {
               // Still the same barcode in view: never count it twice.
               last.seen = now;
               if (now - last.at > 1500) setHeld(true);
             } else if (code) {
               last = { code, at: now, seen: now };
-              const ok = detected.current(code) !== false;
-              scanFeedback(ok);
-              if (!continuous) return;
-              flash(ok);
-              setHeld(false);
-              setMessage(ok ? `Read ${code}` : `${code}: no matching product`);
-            } else if (now - last.seen > 1000) setHeld(false);
+              const result = detected.current(code);
+              if (result === null) {
+                // The page ignored a repeat of the last read: no beep, no count.
+                setHeld(true);
+              } else {
+                const ok = result !== false;
+                scanFeedback(ok);
+                if (!continuous) return;
+                flash(ok);
+                setHeld(false);
+                setMessage(
+                  ok ? `Read ${code}` : `${code}: no matching product`,
+                );
+              }
+            } else if (now - last.seen > 1500) setHeld(false);
           } catch {
             /* Frame not ready yet. */
           }
@@ -153,9 +176,12 @@ export function Scanner({
         onSubmit={(e) => {
           e.preventDefault();
           if (!manual.trim()) return;
-          const ok = onDetect(manual.trim()) !== false;
-          scanFeedback(ok);
-          if (continuous) flash(ok);
+          const result = onDetect(manual.trim());
+          if (result !== null) {
+            const ok = result !== false;
+            scanFeedback(ok);
+            if (continuous) flash(ok);
+          }
           setManual("");
         }}
       >

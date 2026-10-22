@@ -400,16 +400,57 @@ test("continuous camera scanning counts a held barcode once and shows each resul
   // Held in view: no second count, and a hint to move it away.
   await expect(status).toContainText("Same barcode", { timeout: 4000 });
   await expect(page.getByText("1 scanned")).toBeVisible();
+  // A brief loss of the code (camera glare) is still the same scan.
   await show(null);
-  await page.waitForTimeout(1300);
+  await page.waitForTimeout(800);
+  await show("DEMO-BM01");
+  await page.waitForTimeout(600);
+  await expect(page.getByText("1 scanned")).toBeVisible();
+  // Moved away properly, then scanned again: a second item.
+  await show(null);
+  await page.waitForTimeout(3000);
   await show("DEMO-BM01");
   await expect(page.getByText("2 scanned")).toBeVisible();
   await expect(status).toContainText("2 counted");
   await show(null);
-  await page.waitForTimeout(1300);
+  await page.waitForTimeout(3000);
   await show("NOT-A-PRODUCT");
   await expect(page.locator(".scanner.hit-bad")).toBeVisible();
   await expect(status).toContainText("no product");
+  await show(null);
+  await page.getByRole("button", { name: "Done scanning" }).click();
+  // A hand scanner re-reading the same barcode counts once; "1 more" adds another.
+  const box = page.getByPlaceholder("Scan barcode or search code, name, bin");
+  await page.waitForTimeout(2600);
+  for (let i = 0; i < 3; i++) {
+    await box.fill("DEMO-AC04");
+    await box.press("Enter");
+  }
+  await expect(page.locator(".count-last")).toContainText("ignored");
+  await page.getByRole("button", { name: "1 more" }).click();
+  await expect(page.locator(".count-last")).toContainText("2 counted");
+});
+
+test("a purchase bill can add a product that is not in the list yet", async ({
+  page,
+}) => {
+  await signIn(page);
+  await page.getByRole("button", { name: "Purchases", exact: true }).click();
+  await page.getByRole("button", { name: /Record purchase bill/ }).click();
+  const find = page.getByLabel("Find product");
+  await find.fill("E2E-NEW-1");
+  await find.press("Enter");
+  const form = page.locator("fieldset.new-product");
+  await expect(form.getByLabel("Product code")).toHaveValue("E2E-NEW-1");
+  await form.getByLabel("Name").fill("E2E new mixer");
+  await form.getByLabel("Collection").fill("Basin mixers");
+  await form.getByLabel("MRP (₹)").fill("2450");
+  await form.getByRole("button", { name: "Add product to bill" }).click();
+  await expect(form).toHaveCount(0);
+  await expect(page.getByRole("cell", { name: /E2E new mixer/ })).toBeVisible();
+  // Created as a draft, so it stays off the website until published.
+  const r = await page.request.get("/api/catalogue");
+  expect(JSON.stringify(await r.json())).not.toContain("E2E-NEW-1");
 });
 
 test("visitors fill a cart on the website and send an order request on WhatsApp", async ({

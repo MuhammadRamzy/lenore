@@ -3082,3 +3082,21 @@ body:has(.login-page) .demo-bar {
     font-size: 11px;
   }
 }
+
+/* New product created from a purchase bill. */
+.new-product {
+  display: grid;
+  gap: 12px;
+  margin: 4px 0 8px;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--line, #cdd5df);
+  border-radius: 6px;
+  background: var(--sage, #e9eef4);
+}
+.new-product legend {
+  padding: 0 6px;
+  font-weight: 600;
+}
+.new-product .muted {
+  margin: 0;
+}

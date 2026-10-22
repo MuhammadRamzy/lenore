@@ -1317,9 +1317,26 @@ function PurchaseEditor({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [id] = useState(() => crypto.randomUUID());
-  const byId = new Map(products.map((p) => [p.id, p]));
+  // Products created from this bill, before the product list reloads.
+  const [added, setAdded] = useState<Product[]>([]);
+  const [creating, setCreating] = useState<string | null>(null);
+  const all = [...products, ...added];
+  const byId = new Map(all.map((p) => [p.id, p]));
+  const addLine = (p: Product) => {
+    if (!lines.some((l) => l.productId === p.id))
+      setLines((ls) => [
+        ...ls,
+        {
+          productId: p.id,
+          qty: "1",
+          cost: p.costPaise ? rs(p.costPaise) : "",
+          gst: p.gstRateBp === null ? "18" : String(p.gstRateBp / 100),
+        },
+      ]);
+    setFind("");
+  };
   const matches = find
-    ? products
+    ? all
         .filter((p) =>
           `${p.code} ${p.name} ${p.barcode}`
             .toLowerCase()
@@ -1412,18 +1429,8 @@ function PurchaseEditor({
               if (e.key === "Enter") {
                 e.preventDefault();
                 const p = matches[0];
-                if (p && !lines.some((l) => l.productId === p.id))
-                  setLines([
-                    ...lines,
-                    {
-                      productId: p.id,
-                      qty: "1",
-                      cost: p.costPaise ? rs(p.costPaise) : "",
-                      gst:
-                        p.gstRateBp === null ? "18" : String(p.gstRateBp / 100),
-                    },
-                  ]);
-                setFind("");
+                if (p) addLine(p);
+                else if (find.trim()) setCreating(find.trim());
               }
             }}
           />
@@ -1432,30 +1439,35 @@ function PurchaseEditor({
           <ul className="pick-list">
             {matches.map((p) => (
               <li key={p.id}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!lines.some((l) => l.productId === p.id))
-                      setLines([
-                        ...lines,
-                        {
-                          productId: p.id,
-                          qty: "1",
-                          cost: p.costPaise ? rs(p.costPaise) : "",
-                          gst:
-                            p.gstRateBp === null
-                              ? "18"
-                              : String(p.gstRateBp / 100),
-                        },
-                      ]);
-                    setFind("");
-                  }}
-                >
+                <button type="button" onClick={() => addLine(p)}>
                   {p.code} · {p.name}
                 </button>
               </li>
             ))}
           </ul>
+        )}
+        {creating === null ? (
+          <button
+            type="button"
+            className="text-btn"
+            onClick={() => setCreating(find.trim())}
+          >
+            <Plus size={16} aria-hidden="true" />{" "}
+            {find.trim() && !matches.length
+              ? `New product "${find.trim()}"`
+              : "New product, not in the list"}
+          </button>
+        ) : (
+          <NewPurchaseProduct
+            seed={creating}
+            categories={[...new Set(all.map((p) => p.category))].sort()}
+            onCancel={() => setCreating(null)}
+            onCreated={(p) => {
+              setAdded((a) => [...a, p]);
+              setCreating(null);
+              addLine(p);
+            }}
+          />
         )}
         <table className="data-table compact">
           <thead>
@@ -1563,6 +1575,135 @@ function PurchaseEditor({
     </PanelDialog>
   );
 }
+/**
+ * A product bought for the first time, created from the purchase bill. It
+ * starts as a draft (hidden from the website and sales catalogue) so photos
+ * and details can be finished in Products before it is published.
+ */
+function NewPurchaseProduct({
+  seed,
+  categories,
+  onCancel,
+  onCreated,
+}: {
+  seed: string;
+  categories: string[];
+  onCancel: () => void;
+  onCreated: (p: Product) => void;
+}) {
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  // A scanned number is most likely a barcode; anything else, the product code.
+  const isBarcode = /^\d{8,14}$/.test(seed);
+  const save = async (form: HTMLElement) => {
+    const v = (n: string) =>
+      (form.querySelector(`[name="${n}"]`) as HTMLInputElement).value.trim();
+    setBusy(true);
+    setError("");
+    try {
+      const mrp = v("np-mrp");
+      const p = await api<Product>(
+        "/admin/products",
+        {
+          code: v("np-code"),
+          name: v("np-name"),
+          category: v("np-category"),
+          unit: v("np-unit") || "pcs",
+          description: "",
+          pricePaise: mrp ? toPaise(mrp) : null,
+          lowStock: 5,
+          published: false,
+          hsn: v("np-hsn"),
+          gstRateBp: Math.round(Number(v("np-gst") || 0) * 100),
+          barcode: v("np-barcode"),
+        },
+        "POST",
+      );
+      onCreated(p);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  // Not a nested <form>, and no `required`: it lives inside the purchase form; the server validates.
+  return (
+    <fieldset
+      className="new-product"
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          void save(e.currentTarget);
+        }
+      }}
+    >
+      <legend>New product</legend>
+      <p className="muted">
+        Saved as a draft: add photos and publish it later in Products.
+      </p>
+      <div className="form-row">
+        <label>
+          Product code
+          <input name="np-code" defaultValue={isBarcode ? "" : seed} />
+        </label>
+        <label>
+          Name
+          <input name="np-name" />
+        </label>
+      </div>
+      <div className="form-row">
+        <label>
+          Collection
+          <input name="np-category" list="np-categories" />
+          <datalist id="np-categories">
+            {categories.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
+        </label>
+        <label>
+          Unit
+          <input name="np-unit" defaultValue="pcs" />
+        </label>
+      </div>
+      <div className="form-row">
+        <label>
+          MRP (₹)
+          <input name="np-mrp" inputMode="decimal" />
+        </label>
+        <label>
+          GST %
+          <input name="np-gst" inputMode="decimal" defaultValue="18" />
+        </label>
+      </div>
+      <div className="form-row">
+        <label>
+          HSN
+          <input name="np-hsn" inputMode="numeric" />
+        </label>
+        <label>
+          Barcode
+          <input name="np-barcode" defaultValue={isBarcode ? seed : ""} />
+        </label>
+      </div>
+      {error && <p className="error">{error}</p>}
+      <div className="form-actions">
+        <button type="button" className="button" onClick={onCancel}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="button dark"
+          disabled={busy}
+          onClick={(e) => void save(e.currentTarget.closest("fieldset")!)}
+        >
+          {busy ? "Adding…" : "Add product to bill"}
+        </button>
+      </div>
+    </fieldset>
+  );
+}
+
 function PurchaseReturn({
   purchase,
   onClose,
