@@ -33,8 +33,8 @@ export function scanFeedback(ok: boolean) {
 /**
  * Camera scanning via the BarcodeDetector API (Chrome on Android, desktop
  * Chrome/Edge). USB and Bluetooth scanners type into a search box instead.
- * `continuous` keeps the camera open for counting; the same code is ignored
- * for a moment so one scan counts once.
+ * `continuous` keeps the camera open for counting. A code held in view counts
+ * once; it counts again only after it has left the camera for a second.
  */
 export function Scanner({
   onDetect,
@@ -54,6 +54,11 @@ export function Scanner({
   const video = useRef<HTMLVideoElement>(null);
   const [message, setMessage] = useState("Point the camera at a barcode.");
   const [manual, setManual] = useState("");
+  // Each scan flashes the frame green (added) or red (no match).
+  const [hit, setHit] = useState({ n: 0, ok: true, added: 0 });
+  const [held, setHeld] = useState(false);
+  const flash = (ok: boolean) =>
+    setHit((h) => ({ n: h.n + 1, ok, added: h.added + (ok ? 1 : 0) }));
   const supported = cameraScanSupported();
   const detected = useRef(onDetect);
   useEffect(() => {
@@ -64,7 +69,7 @@ export function Scanner({
     let stream: MediaStream | null = null;
     let frame = 0;
     let stopped = false;
-    let last = { code: "", at: 0 };
+    let last = { code: "", at: 0, seen: 0 };
     const detector = new window.BarcodeDetector!({
       formats: [
         "ean_13",
@@ -89,13 +94,19 @@ export function Scanner({
           try {
             const code = (await detector.detect(video.current!))[0]?.rawValue;
             const now = Date.now();
-            if (code && (code !== last.code || now - last.at > 1500)) {
-              last = { code, at: now };
+            if (code && code === last.code && now - last.seen < 1000) {
+              // Still the same barcode in view: never count it twice.
+              last.seen = now;
+              if (now - last.at > 1500) setHeld(true);
+            } else if (code) {
+              last = { code, at: now, seen: now };
               const ok = detected.current(code) !== false;
               scanFeedback(ok);
               if (!continuous) return;
+              flash(ok);
+              setHeld(false);
               setMessage(ok ? `Read ${code}` : `${code}: no matching product`);
-            }
+            } else if (now - last.seen > 1000) setHeld(false);
           } catch {
             /* Frame not ready yet. */
           }
@@ -115,10 +126,20 @@ export function Scanner({
   return (
     <Sheet title={title} onClose={onClose}>
       {supported ? (
-        <div className="scanner">
+        <div
+          className={`scanner${hit.n ? (hit.ok ? " hit-ok" : " hit-bad") : ""}`}
+        >
           <video ref={video} muted playsInline aria-label="Camera preview" />
-          <span className="scanner-frame" aria-hidden="true" />
-          <p role="status">{status ?? message}</p>
+          {/* A new key restarts the flash animation on every scan. */}
+          <span key={hit.n} className="scanner-frame" aria-hidden="true" />
+          {continuous && hit.added > 0 && (
+            <span className="scanner-count">{hit.added} scanned</span>
+          )}
+          <p role="status" className="scanner-status">
+            {held
+              ? "Same barcode. Move it away, then back, to scan it again."
+              : (status ?? message)}
+          </p>
         </div>
       ) : (
         <p className="muted sheet-section">
@@ -132,7 +153,9 @@ export function Scanner({
         onSubmit={(e) => {
           e.preventDefault();
           if (!manual.trim()) return;
-          scanFeedback(onDetect(manual.trim()) !== false);
+          const ok = onDetect(manual.trim()) !== false;
+          scanFeedback(ok);
+          if (continuous) flash(ok);
           setManual("");
         }}
       >

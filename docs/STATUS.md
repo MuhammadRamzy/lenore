@@ -18,4 +18,10 @@ Verification: typecheck, lint, 73 API tests (workerd), 6 browser tests on an iso
 
 **Real catalogue (local) — 2026-10-22.** 308 Wetta products with photos/posters, GST 18% and HSN set (owner to confirm with the accountant). WebP uploads with 600 px thumbnails, POS devices (A4/80 mm/USB printing, scanners, camera), keyboard shortcuts, role access matrix tests, SEO and warranty content. See HANDOFF and ADR 0007.
 
-Not done: production Cloudflare resources and secrets (owner access needed), production data import and thumbnail backfill, Firebase billing migration (awaiting credentials via secrets), load test on staging. Nothing has been deployed.
+**Production (Stage 1) — 2026-10-22.** Deployed to https://lenore-platform.lenore-platform.workers.dev with 308 products (no photos). Custom domain waits on Hostinger nameservers (docs/DEPLOYMENT.md Stage 2).
+
+Price lists now apply to quotations for saved customers (ADR 0009). Public website rebuilt around the brand: Stone hero with product spotlight, website cart with WhatsApp requests, new navigation, Visit us with map, privacy policy and terms (ADR 0011). 269 photos and 58 posters live.
+
+Not done: photos and thumbnail backfill, custom domain, Firebase billing migration (awaiting credentials via secrets), load test on staging. Nothing has been deployed.
+
+**Lenore image export — in progress (Codex, 2026-10-22).** All 352 sources inventoried; Lenore square photos and portrait posters are saved progressively to `~/Downloads/Lenore-Product-Visuals`. User requested Downloads first, app replacement later. Parallel generation and source/code/price/geometry review are underway; see `PROGRESS.txt` and correction reports in the export folder.

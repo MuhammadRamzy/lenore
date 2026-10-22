@@ -8,6 +8,7 @@ import {
   type PricingMode,
   type Quotation,
   type QuotationLine,
+  type QuoteCustomer,
 } from "../shared";
 import { sha256, consumeLimit } from "./auth";
 import {
@@ -19,6 +20,7 @@ import {
   type Viewer,
 } from "./access";
 import type { ProductRow } from "./products";
+import { priceFloors } from "./erp";
 
 export type Settings = {
   whatsapp: string;
@@ -60,6 +62,7 @@ type QuotationRow = {
   created_by: string | null;
   created_by_name: string;
   created_by_phone: string;
+  customer_id: string | null;
   customer_name: string;
   customer_phone: string;
   customer_place: string;
@@ -85,6 +88,7 @@ const quotation = (r: QuotationRow): Quotation => ({
   createdBy: r.created_by,
   createdByName: r.created_by_name,
   createdByPhone: r.created_by_phone,
+  customerId: r.customer_id,
   customerName: r.customer_name,
   customerPhone: r.customer_phone,
   customerPlace: r.customer_place,
@@ -133,6 +137,18 @@ async function price(
       ? settings.pricingMode
       : "mrp";
   const cap = viewer?.maxDiscountBp ?? settings.discountCapBp;
+  let listPrice: ((p: ProductRow) => number | null) | null = null;
+  if (data.customerId) {
+    if (!admin) return "Only admins can link a saved customer.";
+    const customer = await c.env.DB.prepare(
+      "SELECT price_list_id FROM customers WHERE id=?",
+    )
+      .bind(data.customerId)
+      .first<{ price_list_id: string | null }>();
+    if (!customer) return "The selected customer was not found.";
+    if (customer.price_list_id)
+      listPrice = await priceFloors(c.env.DB, customer, ids);
+  }
   const lines: QuotationLine[] = [];
   for (const item of data.items) {
     const p = byId.get(item.productId);
@@ -140,28 +156,36 @@ async function price(
       return "A selected product is no longer available. Refresh the catalogue.";
     if (item.discountBp && item.unitPricePaise !== null)
       return `${p.code}: use either a discount or a price, not both.`;
-    if (mode === "mrp" && (item.discountBp || item.unitPricePaise !== null))
-      return "Discounts are not enabled for this quotation.";
-    if (mode === "capped" && item.unitPricePaise !== null)
-      return "Use a discount percentage; custom prices are not enabled.";
-    if (mode === "capped" && item.discountBp > cap)
-      return `${p.code}: the discount exceeds your limit of ${cap / 100}%.`;
     if (
       item.unitPricePaise !== null &&
       p.price_paise !== null &&
       item.unitPricePaise > p.price_paise
     )
       return `${p.code}: the price cannot exceed the MRP.`;
+    // Lines left untouched take the customer's price-list price.
+    const list = listPrice?.(p) ?? null;
+    const explicit = !!item.discountBp || item.unitPricePaise !== null;
     const unit =
       item.unitPricePaise ??
       (p.price_paise === null
         ? null
-        : discounted(p.price_paise, item.discountBp));
+        : explicit
+          ? discounted(p.price_paise, item.discountBp)
+          : (list ?? p.price_paise));
+    // At or above the customer's list price is always allowed; below it, the usual limits apply.
+    if (list === null || unit === null || unit < list) {
+      if (mode === "mrp" && explicit)
+        return "Discounts are not enabled for this quotation.";
+      if (mode === "capped" && item.unitPricePaise !== null)
+        return "Use a discount percentage; custom prices are not enabled.";
+      if (mode === "capped" && item.discountBp > cap)
+        return `${p.code}: the discount exceeds your limit of ${cap / 100}%.`;
+    }
     const discountBp =
-      item.unitPricePaise !== null && p.price_paise
-        ? Math.round(
-            ((p.price_paise - item.unitPricePaise) * 10000) / p.price_paise,
-          )
+      unit !== null &&
+      p.price_paise &&
+      (item.unitPricePaise !== null || !explicit)
+        ? Math.round(((p.price_paise - unit) * 10000) / p.price_paise)
         : item.discountBp;
     lines.push({
       productId: p.id,
@@ -252,6 +276,7 @@ routes.post("/quotations", async (c) => {
     createdBy: creator,
     createdByName: viewer?.name ?? (data.preparedBy || "Lenore catalogue"),
     createdByPhone: viewer?.phone ?? "",
+    customerId: viewer ? data.customerId : null,
     customerName: data.customerName,
     customerPhone: data.customerPhone,
     customerPlace: data.customerPlace,
@@ -271,8 +296,8 @@ routes.post("/quotations", async (c) => {
   await c.env.DB.batch([
     c.env.DB.prepare(
       `INSERT INTO quotations(id,number,share_token,request_hash,status,channel,created_by,created_by_name,created_by_phone,
-      customer_name,customer_phone,customer_place,notes,valid_until,terms,items_json,item_count,mrp_total_paise,discount_paise,total_paise,created_at,updated_at)
-      VALUES(?,?,?,?,'draft',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      customer_id,customer_name,customer_phone,customer_place,notes,valid_until,terms,items_json,item_count,mrp_total_paise,discount_paise,total_paise,created_at,updated_at)
+      VALUES(?,?,?,?,'draft',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).bind(
       q.id,
       q.number,
@@ -282,6 +307,7 @@ routes.post("/quotations", async (c) => {
       q.createdBy,
       q.createdByName,
       q.createdByPhone,
+      q.customerId,
       q.customerName,
       q.customerPhone,
       q.customerPlace,
@@ -323,6 +349,7 @@ routes.put("/quotations/:id", async (c) => {
   const now = new Date().toISOString();
   const q: Quotation = {
     ...quotation(row),
+    customerId: data.customerId,
     customerName: data.customerName,
     customerPhone: data.customerPhone,
     customerPlace: data.customerPlace,
@@ -339,10 +366,11 @@ routes.put("/quotations/:id", async (c) => {
   };
   const [updated] = await c.env.DB.batch([
     c.env.DB.prepare(
-      `UPDATE quotations SET customer_name=?,customer_phone=?,customer_place=?,notes=?,valid_until=?,items_json=?,item_count=?,
+      `UPDATE quotations SET customer_id=?,customer_name=?,customer_phone=?,customer_place=?,notes=?,valid_until=?,items_json=?,item_count=?,
       mrp_total_paise=?,discount_paise=?,total_paise=?,version=version+1,revision=revision+1,updated_at=?
       WHERE id=? AND revision=? RETURNING id`,
     ).bind(
+      q.customerId,
       q.customerName,
       q.customerPhone,
       q.customerPlace,
@@ -402,6 +430,60 @@ routes.patch("/quotations/:id", async (c) => {
   return updated
     ? c.json(quotation(updated))
     : c.json({ error: "This quotation changed. Refresh and try again." }, 409);
+});
+
+routes.get("/quotation-customers", async (c) => {
+  if (!isAdmin(c.get("viewer")))
+    return c.json({ error: "Only admins can link saved customers." }, 403);
+  const q = (c.req.query("q") ?? "").trim().replace(/[%_]/g, "");
+  const rows = await c.env.DB.prepare(
+    `SELECT c.id,c.name,c.phone,c.address,l.name AS list FROM customers c LEFT JOIN price_lists l ON l.id=c.price_list_id
+    WHERE c.name LIKE ? OR c.phone LIKE ? ORDER BY c.name LIMIT 20`,
+  )
+    .bind(`%${q}%`, `%${q}%`)
+    .all();
+  return c.json(rows.results);
+});
+routes.get("/quotation-customers/:id", async (c) => {
+  if (!isAdmin(c.get("viewer")))
+    return c.json({ error: "Only admins can link saved customers." }, 403);
+  const r = await c.env.DB.prepare(
+    `SELECT c.id,c.name,c.phone,c.address,c.price_list_id,l.name AS list,l.discount_bp
+    FROM customers c LEFT JOIN price_lists l ON l.id=c.price_list_id WHERE c.id=?`,
+  )
+    .bind(c.req.param("id"))
+    .first<{
+      id: string;
+      name: string;
+      phone: string;
+      address: string;
+      price_list_id: string | null;
+      list: string | null;
+      discount_bp: number | null;
+    }>();
+  if (!r) return c.json({ error: "Customer not found." }, 404);
+  const items = r.list
+    ? await c.env.DB.prepare(
+        "SELECT product_id,price_paise FROM price_list_items WHERE price_list_id=?",
+      )
+        .bind(r.price_list_id)
+        .all<{ product_id: string; price_paise: number }>()
+    : null;
+  return c.json({
+    id: r.id,
+    name: r.name,
+    phone: r.phone,
+    address: r.address,
+    priceList: items
+      ? {
+          name: r.list!,
+          discountBp: r.discount_bp ?? 0,
+          prices: Object.fromEntries(
+            items.results.map((i) => [i.product_id, i.price_paise]),
+          ),
+        }
+      : null,
+  } satisfies QuoteCustomer);
 });
 
 routes.get("/quotations", async (c) => {

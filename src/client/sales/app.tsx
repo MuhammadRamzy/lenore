@@ -19,6 +19,7 @@ import {
   QuoteDetail,
   QuoteList,
   linesFrom,
+  loadQuoteCustomer,
   pricingFor,
 } from "./quote";
 import {
@@ -127,6 +128,13 @@ function SalesWorkspace({
     config.quoteValidityDays,
   );
   const { quotes: localQuotes, remember } = useLocalQuotes();
+  // Revisions keep the saved customer, so new lines get their price list too.
+  const withCustomer = (id: string | null) => {
+    if (id)
+      void loadQuoteCustomer(id)
+        .then((customer) => setDraft((d) => ({ ...d, customer })))
+        .catch(() => undefined);
+  };
   const [toast, setToast] = useState<{
     message: string;
     undo?: () => void;
@@ -291,6 +299,7 @@ function SalesWorkspace({
             pricing={pricing}
             config={config}
             level={level}
+            admin={session.role === "owner" || session.role === "admin"}
             onBrowse={() => go({ tab: "browse" })}
             onSaved={(q) => {
               if (!staff) remember(q);
@@ -330,12 +339,14 @@ function SalesWorkspace({
                   notes: openQuote.notes,
                   validUntil: openQuote.validUntil,
                   lines: linesFrom(openQuote),
+                  customer: null,
                   editing: {
                     id: openQuote.id,
                     number: openQuote.number,
                     revision: openQuote.revision,
                   },
                 }));
+                withCustomer(openQuote.customerId);
                 go({ tab: "quote" });
               }}
               onDuplicate={() => {

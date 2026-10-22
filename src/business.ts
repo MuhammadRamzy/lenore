@@ -37,6 +37,8 @@ export const business = {
     regionCode: "KL",
     country: "IN",
   },
+  /** Showroom location from the owner (11°38'56.8"N 75°43'45.0"E, 2026-10-22). */
+  geo: { lat: 11.649111, lng: 75.729167 },
 } as const;
 
 export const addressLine = [

@@ -68,10 +68,11 @@ export const product = (r: ProductRow): Product => ({
   bin: r.bin,
   costPaise: r.cost_paise,
 });
-/** Public visitors get stock status only; authorised users get the quantity. */
+/** Stock quantities and shelf locations go to company staff only (`exact`); everyone else, salespeople included, gets the status. */
 export const catalogueProduct = (
   r: ProductRow,
   level: CatalogueLevel,
+  exact = false,
 ): CatalogueProduct => ({
   id: r.id,
   slug: r.slug ?? slugify(r.code),
@@ -85,8 +86,8 @@ export const catalogueProduct = (
   posterUrl: r.poster_key ? `/api/media/${r.poster_key}` : null,
   updatedAt: r.updated_at,
   barcode: r.barcode ?? "",
-  bin: level === "public" ? "" : r.bin,
-  stock: level === "public" ? null : r.stock,
+  bin: exact ? r.bin : "",
+  stock: exact ? r.stock : null,
   availability: availability(r.stock, r.low_stock),
 });
 export const actorName = (v: Viewer | null) =>
@@ -122,11 +123,12 @@ routes.get("/catalogue", async (c) => {
   // Public visitors see what the website shows; the sales team sees every published product.
   const site = level === "public" ? await readWebsite(c.env.DB) : null;
   const where = site ? ON_WEBSITE : "published=1";
-  // Cheap version check lets 40 phones refresh every 30 s with mostly 304s.
+  // One-row version check (migration 0014 triggers) lets 40 phones refresh every 30 s with mostly 304s.
   const version = await c.env.DB.prepare(
-    `SELECT COUNT(*) AS n, COALESCE(MAX(updated_at),'') AS t FROM products WHERE ${where}`,
-  ).first<{ n: number; t: string }>();
-  const etag = `W/"${level}-${version!.n}-${version!.t}${site ? `-${site.updatedAt}` : ""}"`;
+    "SELECT value FROM counters WHERE name='catalogue'",
+  ).first<number>("value");
+  const exact = !!c.get("viewer")?.posAccess;
+  const etag = `W/"${level}${exact ? "-exact" : ""}-${version}"`;
   c.header("Cache-Control", "private, no-cache");
   c.header("ETag", etag);
   if (c.req.header("If-None-Match") === etag) return c.body(null, 304);
@@ -136,7 +138,7 @@ routes.get("/catalogue", async (c) => {
   ).all<ProductRow>();
   return c.json(
     rows.results.map((r) => {
-      const p = catalogueProduct(r, level);
+      const p = catalogueProduct(r, level, exact);
       return site ? publicView(p, site) : p;
     }),
   );
@@ -155,7 +157,7 @@ routes.get("/catalogue/:slug", async (c) => {
           .first<ProductRow>();
   if (!row) return c.json({ error: "This product is not available." }, 404);
   c.executionCtx.waitUntil(recordView(c.env.DB, row.id));
-  const p = catalogueProduct(row, level);
+  const p = catalogueProduct(row, level, !!c.get("viewer")?.posAccess);
   return c.json(site ? publicView(p, site) : p);
 });
 routes.post("/catalogue/:id/view", async (c) => {
@@ -595,6 +597,10 @@ routes.post("/admin/media/by-code", async (c) => {
 });
 routes.get("/media/:key", async (c) => {
   const key = c.req.param("key");
+  // Website photos are cached at the edge, so repeat visitors cost no D1 or R2 reads.
+  const cache = (caches as unknown as { default: Cache }).default;
+  const hit = await cache.match(c.req.raw);
+  if (hit) return hit;
   const p = await c.env.DB.prepare(
     `SELECT published, (${ON_WEBSITE}) AND (SELECT show_products FROM website_settings WHERE id=1)=1 AS on_site
     FROM products WHERE image_key=? OR poster_key=?`,
@@ -614,14 +620,18 @@ routes.get("/media/:key", async (c) => {
     (c.req.query("w") === "600" && (await c.env.MEDIA.get(thumbKey(key)))) ||
     (await c.env.MEDIA.get(key));
   if (!object) return c.json({ error: "Image not found." }, 404);
-  return new Response(object.body, {
+  const response = new Response(object.body, {
     headers: {
       "Content-Type":
         object.httpMetadata?.contentType ?? "application/octet-stream",
       // Keys are immutable: a replaced image gets a new key.
-      "Cache-Control": "private, max-age=604800, immutable",
+      "Cache-Control": `${p.on_site ? "public" : "private"}, max-age=604800, immutable`,
       "X-Content-Type-Options": "nosniff",
     },
   });
+  // ponytail: a product hidden later keeps its cached photo reachable by its unguessable key for up to 7 days.
+  if (p.on_site)
+    c.executionCtx.waitUntil(cache.put(c.req.raw, response.clone()));
+  return response;
 });
 export default routes;

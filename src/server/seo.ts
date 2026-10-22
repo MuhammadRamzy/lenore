@@ -64,6 +64,7 @@ type Head = {
   noindex?: boolean;
   type?: "website" | "product";
   image?: string;
+  imageAlt?: string;
   jsonLd?: object[];
   /** Installable app shell: its own manifest, icon and colour. */
   app?: { manifest: string; icon: string; theme: string; title: string };
@@ -84,7 +85,19 @@ function headTags(c: AppContext, h: Head) {
     `<meta property="og:description" content="${escapeHtml(clip(h.description))}" />`,
     `<meta property="og:url" content="${escapeHtml(url)}" />`,
     `<meta property="og:image" content="${escapeHtml(image)}" />`,
+    `<meta property="og:image:alt" content="${escapeHtml(h.imageAlt ?? "Lenore bath fittings: taps, showers and accessories")}" />`,
+    // The default card's size lets WhatsApp and Facebook lay it out before downloading it.
+    ...(h.image
+      ? []
+      : [
+          `<meta property="og:image:type" content="image/jpeg" />`,
+          `<meta property="og:image:width" content="1200" />`,
+          `<meta property="og:image:height" content="630" />`,
+        ]),
     `<meta name="twitter:card" content="summary_large_image" />`,
+    `<meta name="twitter:title" content="${escapeHtml(h.title)}" />`,
+    `<meta name="twitter:description" content="${escapeHtml(clip(h.description))}" />`,
+    `<meta name="twitter:image" content="${escapeHtml(image)}" />`,
     `<meta name="geo.region" content="IN-KL" />`,
     `<meta name="geo.placename" content="Kuttiady, Kozhikode" />`,
   ];
@@ -143,7 +156,7 @@ export const securityHeaders = {
   "Permissions-Policy": "camera=(self), microphone=(), geolocation=()",
   "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
   "Content-Security-Policy":
-    "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
+    "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; frame-src https://www.google.com; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
 };
 
 async function accessMode(db: D1Database): Promise<AccessMode> {
@@ -280,6 +293,12 @@ function businessLd(base: string) {
     url: `${base}/`,
     logo: `${base}/icons/icon-512.png`,
     image: `${base}/images/og-lenore.jpg`,
+    geo: {
+      "@type": "GeoCoordinates",
+      latitude: business.geo.lat,
+      longitude: business.geo.lng,
+    },
+    hasMap: `https://www.google.com/maps?q=${business.geo.lat},${business.geo.lng}`,
     telephone: business.phone,
     email: business.email,
     taxID: business.gstin,
@@ -388,7 +407,7 @@ routes.use("*", async (c, next) => {
   if (
     !c.env.SITE_ORIGIN ||
     c.req.method !== "GET" ||
-    !/^\/($|collections|products\/|about$|contact$|sitemap\.xml$|robots\.txt$)/.test(
+    !/^\/($|collections|products\/|about$|contact$|privacy$|terms$|sitemap\.xml$|robots\.txt$)/.test(
       path,
     )
   )
@@ -410,6 +429,7 @@ const common = (d: SiteData) => ({
   catalogueMode: d.mode,
   showPrices: d.site.showProducts && d.site.showPrices,
   showStock: d.site.showProducts && d.site.showStock,
+  nav: d.categories.map(({ name, slug, count }) => ({ name, slug, count })),
 });
 
 routes.get("/", async (c) => {
@@ -419,14 +439,28 @@ routes.get("/", async (c) => {
   const featured = picked.length
     ? picked
     : [...d.products].sort((a, b) => +!!b.imageUrl - +!!a.imageUrl).slice(0, 8);
+  // Hero wall: a fresh random draw from every photographed product, so the whole range shows over visits.
+  const photographed = d.products.filter((p) => p.imageUrl);
+  for (let i = photographed.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [photographed[i], photographed[j]] = [photographed[j], photographed[i]];
+  }
+  // 24 thumbnails (~1 MB) keep the page light; they load lazily below the first row.
+  const hero = photographed.slice(0, 24);
   const base = origin(c);
   return renderSite(
     c,
-    { ...common(d), kind: "home", categories: d.categories, featured },
+    {
+      ...common(d),
+      kind: "home",
+      categories: d.categories,
+      featured,
+      hero,
+    },
     {
       title: "Lenore — Bath Fittings & Sanitary Ware in Kuttiady, Kozhikode",
       description:
-        "Lenore Trading LLP, Kuttiady: bath fittings and sanitary ware for homes and projects in Kozhikode, Kerala. Explore collections, visit the showroom or request a quotation on WhatsApp.",
+        "Lenore, Refined Bathroom Living: a bath fittings and sanitary ware showroom in Vatayam, Kuttiady, Kozhikode. Taps, showers, health faucets, sinks and accessories, chosen for quality, finish and value.",
       path: "/",
       jsonLd: [
         {
@@ -525,6 +559,7 @@ routes.get("/products/:slug", async (c) => {
       path: `/products/${product.slug}`,
       type: "product",
       image: product.imageUrl ? `${base}${product.imageUrl}` : undefined,
+      imageAlt: `${product.name} (${product.code})`,
       jsonLd: [
         breadcrumbLd(base, [
           ["Collections", "/collections"],
@@ -550,6 +585,35 @@ routes.get("/about", async (c) => {
     },
   );
 });
+const legal = {
+  privacy: {
+    title: "Privacy policy | Lenore",
+    description:
+      "How Lenore Trading LLP collects, uses and protects the details you share through this website, enquiries and quotation requests.",
+  },
+  terms: {
+    title: "Terms of use | Lenore",
+    description:
+      "Terms for using the Lenore website: prices, quotation and order requests, warranty, and how product images were created.",
+  },
+};
+for (const doc of ["privacy", "terms"] as const)
+  routes.get(`/${doc}`, async (c) => {
+    const d = await siteData(c, false);
+    return renderSite(
+      c,
+      { ...common(d), kind: "legal", doc },
+      {
+        ...legal[doc],
+        path: `/${doc}`,
+        jsonLd: [
+          breadcrumbLd(origin(c), [
+            [doc === "privacy" ? "Privacy policy" : "Terms of use", `/${doc}`],
+          ]),
+        ],
+      },
+    );
+  });
 routes.get("/contact", async (c) => {
   const d = await siteData(c, false);
   return renderSite(
@@ -686,8 +750,19 @@ routes.get("/sitemap.xml", async (c) => {
     entry("/", latest || undefined),
     entry("/collections", latest || undefined),
     entry("/about"),
+    entry("/privacy"),
+    entry("/terms"),
     entry("/contact"),
-    ...d.categories.map((x) => entry(`/collections/${x.slug}`)),
+    // Each collection changes when one of its products does.
+    ...d.categories.map((x) =>
+      entry(
+        `/collections/${x.slug}`,
+        d.products
+          .filter((p) => p.category === x.name)
+          .reduce((m, p) => (p.updatedAt > m ? p.updatedAt : m), "") ||
+          undefined,
+      ),
+    ),
     // Product photos and posters, so they can surface in Google Images.
     ...d.products.map((p) =>
       entry(

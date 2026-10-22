@@ -1,4 +1,10 @@
-import { useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -7,28 +13,36 @@ import {
   MapPin,
   Menu,
   MessageCircle,
+  ChevronDown,
   Phone,
   Printer,
   X,
   Mail,
   Check,
-  Layers,
   ShieldCheck,
-  Settings2,
-  BadgeCheck,
 } from "lucide-react";
 import { business, addressLine } from "../../business";
 import { categorySlug, money, type CatalogueProduct } from "../../shared";
 import {
   businessWhatsapp,
+  mapEmbed,
   mapsLink,
   productImage,
   telLink,
+  thumb,
   whatsappLink,
   withCountry,
 } from "../links";
 import { QuoteDocument } from "../quote-view";
 import type { CategorySummary, SitePage } from "./types";
+import { OpenCart } from "./cart";
+import {
+  ActionBar,
+  AddToCart,
+  CartButton,
+  CartPanel,
+  CartToast,
+} from "./cart-panel";
 
 export function Mark({ className = "" }: { className?: string }) {
   return <span className={`mark ${className}`} aria-hidden="true" />;
@@ -46,47 +60,85 @@ export function Wordmark() {
 }
 
 function Header({ page }: { page: SitePage }) {
-  const [open, setOpen] = useState(false);
-  const links = [
-    ["/collections", "Collections"],
-    ["/about", "About"],
-    ["/contact", "Visit us"],
-  ];
+  const [menu, setMenu] = useState(false);
+  const [panel, setPanel] = useState(false);
+  const header = useRef<HTMLElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (!panel) return;
+    const close = (e: Event) => {
+      if (
+        e instanceof KeyboardEvent
+          ? e.key === "Escape"
+          : !header.current?.contains(e.target as Node)
+      )
+        setPanel(false);
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [panel]);
+  useEffect(() => {
+    const d = dialog.current;
+    if (menu && d && !d.open) d.showModal();
+    if (!menu && d?.open) d.close();
+  }, [menu]);
+  const section =
+    page.kind === "collections" ||
+    page.kind === "collection" ||
+    page.kind === "product"
+      ? "collections"
+      : page.kind;
+  const current = (s: string) => (section === s ? "page" : undefined);
+  const biggest = [...page.nav].sort((a, b) => b.count - a.count);
+  const whatsapp = whatsappLink(
+    "Hello Lenore, I would like to know more about your bath fittings.",
+    businessWhatsapp(page.whatsapp),
+  );
   return (
-    <header className="site-header">
+    <header ref={header} className="site-header">
       <div className="site-header-inner">
         <Wordmark />
-        <nav
-          id="site-nav"
-          className={open ? "open" : ""}
-          aria-label="Main navigation"
-        >
-          {links.map(([href, label]) => (
-            <a
-              key={href}
-              href={href}
-              aria-current={
-                (page.kind === "collections" || page.kind === "collection"
-                  ? "/collections"
-                  : `/${page.kind}`) === href
-                  ? "page"
-                  : undefined
-              }
+        <nav className="site-nav" aria-label="Main navigation">
+          {page.nav.length > 0 ? (
+            <button
+              type="button"
+              className="nav-link"
+              aria-expanded={panel}
+              aria-controls="collections-panel"
+              aria-current={current("collections")}
+              onClick={() => setPanel(!panel)}
             >
-              {label}
+              Collections <ChevronDown size={16} aria-hidden="true" />
+            </button>
+          ) : (
+            <a
+              className="nav-link"
+              href="/collections"
+              aria-current={current("collections")}
+            >
+              Collections
             </a>
-          ))}
-          <a href="/catalogue" className="nav-catalogue">
-            Sales catalogue
+          )}
+          <a className="nav-link" href="/about" aria-current={current("about")}>
+            About
+          </a>
+          <a
+            className="nav-link"
+            href="/contact"
+            aria-current={current("contact")}
+          >
+            Visit us
           </a>
         </nav>
         <div className="site-header-actions">
+          <CartButton />
           <a
-            className="btn btn-primary btn-sm hide-mobile"
-            href={whatsappLink(
-              "Hello Lenore, I would like to know more about your bath fittings.",
-              businessWhatsapp(page.whatsapp),
-            )}
+            className="btn btn-sm header-whatsapp hide-mobile"
+            href={whatsapp}
             target="_blank"
             rel="noopener"
           >
@@ -95,15 +147,105 @@ function Header({ page }: { page: SitePage }) {
           <button
             type="button"
             className="icon-btn show-mobile"
-            aria-expanded={open}
-            aria-controls="site-nav"
-            aria-label={open ? "Close menu" : "Open menu"}
-            onClick={() => setOpen(!open)}
+            aria-label="Open menu"
+            aria-expanded={menu}
+            aria-controls="mobile-menu"
+            onClick={() => setMenu(true)}
           >
-            {open ? <X size={22} /> : <Menu size={22} />}
+            <Menu size={22} />
           </button>
         </div>
       </div>
+
+      {panel && (
+        <div id="collections-panel" className="collections-panel">
+          <div className="collections-panel-inner">
+            <ul>
+              {biggest.map((c) => (
+                <li key={c.slug}>
+                  <a href={`/collections/${c.slug}`}>
+                    {c.name}
+                    <small>{c.count}</small>
+                  </a>
+                </li>
+              ))}
+            </ul>
+            <a className="text-link" href="/collections">
+              All collections <ArrowRight size={16} aria-hidden="true" />
+            </a>
+          </div>
+        </div>
+      )}
+
+      <dialog
+        ref={dialog}
+        id="mobile-menu"
+        className="mobile-menu"
+        aria-label="Menu"
+        onClose={() => setMenu(false)}
+      >
+        <div className="mobile-menu-head">
+          <Wordmark />
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="Close menu"
+            onClick={() => dialog.current?.close()}
+          >
+            <X size={22} />
+          </button>
+        </div>
+        <nav className="mobile-menu-links" aria-label="Menu">
+          <details>
+            <summary aria-current={current("collections")}>
+              Collections <ChevronDown size={20} aria-hidden="true" />
+            </summary>
+            <ul>
+              {biggest.map((c) => (
+                <li key={c.slug}>
+                  <a href={`/collections/${c.slug}`}>
+                    {c.name}
+                    <small>{c.count}</small>
+                  </a>
+                </li>
+              ))}
+              <li>
+                <a href="/collections" className="all">
+                  All collections <ArrowRight size={16} aria-hidden="true" />
+                </a>
+              </li>
+            </ul>
+          </details>
+          <a href="/about" aria-current={current("about")}>
+            About
+          </a>
+          <a href="/contact" aria-current={current("contact")}>
+            Visit us
+          </a>
+        </nav>
+        <div className="mobile-menu-contact">
+          <a
+            className="btn btn-primary btn-lg"
+            href={whatsapp}
+            target="_blank"
+            rel="noopener"
+          >
+            <MessageCircle size={18} aria-hidden="true" /> WhatsApp
+          </a>
+          <a className="btn btn-ghost btn-lg" href={telLink(business.phone)}>
+            <Phone size={18} aria-hidden="true" /> Call
+          </a>
+          <a
+            className="btn btn-ghost btn-lg"
+            href={mapsLink}
+            target="_blank"
+            rel="noopener"
+          >
+            <MapPin size={18} aria-hidden="true" /> Directions
+          </a>
+          <p>{addressLine}</p>
+        </div>
+      </dialog>
     </header>
   );
 }
@@ -167,6 +309,10 @@ function Footer() {
         <span>
           © {new Date().getFullYear()} {business.legalName}
         </span>
+        <nav className="footer-legal-links" aria-label="Legal">
+          <a href="/privacy">Privacy policy</a>
+          <a href="/terms">Terms of use</a>
+        </nav>
         <span>GSTIN {business.gstin}</span>
       </div>
     </footer>
@@ -174,33 +320,6 @@ function Footer() {
 }
 
 /** Thumb-reach contact bar on phones. */
-function ActionBar({ page }: { page: SitePage }) {
-  return (
-    <nav className="action-bar" aria-label="Quick contact">
-      <a href={telLink(business.phone)}>
-        <Phone size={20} aria-hidden="true" />
-        Call
-      </a>
-      <a
-        className="primary"
-        href={whatsappLink(
-          "Hello Lenore, I would like to know more about your bath fittings.",
-          businessWhatsapp(page.whatsapp),
-        )}
-        target="_blank"
-        rel="noopener"
-      >
-        <MessageCircle size={20} aria-hidden="true" />
-        WhatsApp
-      </a>
-      <a href={mapsLink} target="_blank" rel="noopener">
-        <MapPin size={20} aria-hidden="true" />
-        Directions
-      </a>
-    </nav>
-  );
-}
-
 export function ProductImage({
   product,
   demo,
@@ -268,18 +387,21 @@ function ProductCard({
   demo: boolean;
 }) {
   return (
-    <a className="product-card" href={`/products/${product.slug}`}>
-      <ProductImage product={product} demo={demo} />
-      <div className="product-card-body">
-        <span className="eyebrow">{product.category}</span>
-        <h3>{product.name}</h3>
-        <span className="code">{product.code}</span>
-        <div className="product-card-foot">
-          <strong>{money(product.pricePaise)}</strong>
-          <StatusBadge product={product} />
+    <article className="product-card">
+      <a className="product-card-link" href={`/products/${product.slug}`}>
+        <ProductImage product={product} demo={demo} />
+        <div className="product-card-body">
+          <span className="eyebrow">{product.category}</span>
+          <h3>{product.name}</h3>
+          <span className="code">{product.code}</span>
+          <div className="product-card-foot">
+            <strong>{money(product.pricePaise)}</strong>
+            <StatusBadge product={product} />
+          </div>
         </div>
-      </div>
-    </a>
+      </a>
+      <AddToCart product={product} />
+    </article>
   );
 }
 
@@ -345,74 +467,138 @@ function CatalogueNote({ page }: { page: SitePage }) {
   );
 }
 
+/** One product at a time on warm stone, as the brand's photography asks; it moves on every few seconds. */
+function Spotlight({ products }: { products: CatalogueProduct[] }) {
+  const [at, setAt] = useState(0);
+  const [paused, setPaused] = useState(false);
+  // Only the current and next photos are fetched; earlier ones stay for the cross-fade.
+  const [loaded, setLoaded] = useState(1);
+  useEffect(() => {
+    if (paused || matchMedia("(prefers-reduced-motion: reduce)").matches)
+      return;
+    const t = setInterval(() => {
+      setAt((n) => (n + 1) % products.length);
+      setLoaded((n) => Math.min(products.length, n + 1));
+    }, 5000);
+    return () => clearInterval(t);
+  }, [paused, products.length]);
+  const p = products[at];
+  return (
+    <figure
+      className="spotlight"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+    >
+      <a className="spotlight-stage" href={`/products/${p.slug}`}>
+        {products.slice(0, Math.max(loaded + 1, at + 1)).map((x, n) => (
+          <img
+            key={x.id}
+            className={n === at ? "on" : undefined}
+            src={x.imageUrl!}
+            srcSet={`${thumb(x.imageUrl!)} 600w, ${x.imageUrl} 1600w`}
+            sizes="(max-width: 900px) 90vw, 520px"
+            alt={n === at ? x.name : ""}
+            width={800}
+            height={800}
+            fetchPriority={n === 0 ? "high" : "low"}
+            decoding="async"
+          />
+        ))}
+      </a>
+      <figcaption>
+        <a href={`/products/${p.slug}`}>
+          <small>{p.category}</small>
+          <span>{p.name}</span>
+        </a>
+        <span className="spotlight-dots">
+          {products.map((x, n) => (
+            <button
+              key={x.id}
+              type="button"
+              aria-label={`Show ${x.name}`}
+              aria-pressed={n === at}
+              onClick={() => {
+                setAt(n);
+                setLoaded((l) => Math.max(l, n + 1));
+              }}
+            />
+          ))}
+        </span>
+      </figcaption>
+    </figure>
+  );
+}
+
+/** The rest of the draw, drifting past in one calm row; listed twice for a seamless loop. */
+function Filmstrip({ products }: { products: CatalogueProduct[] }) {
+  return (
+    <div className="filmstrip" role="region" aria-label="More from the range">
+      <ul>
+        {[...products, ...products].map((p, i) => {
+          const copy = i >= products.length;
+          return (
+            <li key={`${p.id}-${i}`} aria-hidden={copy || undefined}>
+              <a href={`/products/${p.slug}`} tabIndex={copy ? -1 : undefined}>
+                <img
+                  src={thumb(p.imageUrl!)}
+                  alt={copy ? "" : p.name}
+                  width={160}
+                  height={160}
+                  loading="lazy"
+                  decoding="async"
+                  fetchPriority="low"
+                />
+                <span>{p.name}</span>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 function Home({ page }: { page: Extract<SitePage, { kind: "home" }> }) {
   return (
     <>
-      <section className="hero">
-        <div className="hero-copy">
-          <p className="eyebrow">
-            {business.legalName} · {business.address.locality}
-          </p>
-          <h1>
-            Refined bathroom living, <span>chosen with care.</span>
-          </h1>
-          <p className="lead">
-            Bath fittings and sanitary ware for homes and projects across
-            Kozhikode. Explore the range, then let our team prepare a clear,
-            itemised quotation.
-          </p>
-          <div className="hero-actions">
-            <a className="btn btn-primary btn-lg" href="/collections">
-              Explore collections <ArrowRight size={18} aria-hidden="true" />
-            </a>
-            <a
-              className="btn btn-ghost btn-lg"
-              href={whatsappLink(
-                "Hello Lenore, I would like a quotation.",
-                businessWhatsapp(page.whatsapp),
-              )}
-              target="_blank"
-              rel="noopener"
-            >
-              <MessageCircle size={18} aria-hidden="true" /> Request a quote
-            </a>
-          </div>
-          <ul className="hero-facts">
+      <section className="hero-stone" aria-labelledby="hero-title">
+        <div className="hero-inner">
+          <div className="hero-copy">
+            <p className="hero-tagline">{business.tagline}</p>
+            <h1 id="hero-title">
+              Your bathroom, <span>considered.</span>
+            </h1>
+            <p className="lead">
+              Taps, showers, sinks and accessories, chosen for quality, finish
+              and value. See them side by side in our showroom in Kuttiady.
+            </p>
+            <div className="hero-actions">
+              <a className="btn btn-primary btn-lg" href="/collections">
+                Explore the collection{" "}
+                <ArrowRight size={18} aria-hidden="true" />
+              </a>
+              <a className="btn btn-ghost btn-lg" href="/contact">
+                <MapPin size={18} aria-hidden="true" /> Visit the showroom
+              </a>
+            </div>
             {page.categories.length > 0 && (
-              <li>
-                <Layers size={16} aria-hidden="true" />{" "}
-                {page.categories.reduce((n, c) => n + c.count, 0)} products in{" "}
-                {page.categories.length} ranges
-              </li>
+              <p className="hero-count">
+                <b>{page.categories.reduce((n, c) => n + c.count, 0)}</b>{" "}
+                fittings in <b>{page.categories.length}</b> collections
+              </p>
             )}
-            <li>
-              <MapPin size={16} aria-hidden="true" /> Showroom in Kuttiady
-            </li>
-            <li>
-              <Phone size={16} aria-hidden="true" /> {business.phoneDisplay}
-            </li>
-          </ul>
+          </div>
+          {page.hero.length > 0 && (
+            <Spotlight products={page.hero.slice(0, 8)} />
+          )}
         </div>
-        <figure className="hero-visual">
-          <img
-            src="/images/mixer-cutout-960.webp"
-            srcSet="/images/mixer-cutout-640.webp 640w, /images/mixer-cutout-960.webp 960w"
-            sizes="(max-width: 900px) 80vw, 45vw"
-            alt="Chrome single lever basin mixer"
-            width={960}
-            height={960}
-            fetchPriority="high"
-          />
-        </figure>
+        {page.hero.length > 8 && <Filmstrip products={page.hero.slice(8)} />}
       </section>
 
       {page.categories.length > 0 && (
         <section className="section" aria-labelledby="ranges-title">
           <div className="section-head">
-            <div>
-              <p className="eyebrow">The range</p>
-              <h2 id="ranges-title">Shop by category</h2>
-            </div>
+            <h2 id="ranges-title">Shop by category</h2>
             <a href="/collections" className="text-link">
               All collections <ArrowRight size={16} aria-hidden="true" />
             </a>
@@ -440,10 +626,7 @@ function Home({ page }: { page: Extract<SitePage, { kind: "home" }> }) {
       {page.featured.length > 0 && (
         <section className="section" aria-labelledby="featured-title">
           <div className="section-head">
-            <div>
-              <p className="eyebrow">In the showroom</p>
-              <h2 id="featured-title">Featured products</h2>
-            </div>
+            <h2 id="featured-title">Featured products</h2>
           </div>
           <div className="product-grid">
             {page.featured.map((p) => (
@@ -473,37 +656,49 @@ function Warranty({ compact = false }: { compact?: boolean }) {
           .join(" · ")}
       </p>
     );
-  // Longest cover in the middle, the way it reads on the shop's card.
-  const [ten, ...rest] = business.warranty;
+  // Bars share one 0–10 year scale, so the cover reads at a glance.
+  const longest = Math.max(...business.warranty.map((w) => w.years));
   return (
     <section className="section" aria-labelledby="warranty-title">
       <div className="warranty">
-        <div className="warranty-head">
-          <p className="eyebrow">Warranty</p>
+        <div className="warranty-copy">
+          <ShieldCheck size={28} aria-hidden="true" />
           <h2 id="warranty-title">Fittings built to last, and backed for it</h2>
+          <p>
+            Every CP fitting carries a {longest}-year warranty on its body, with
+            separate cover for the spindle, head and accessories.
+          </p>
         </div>
-        <ul className="warranty-grid">
-          {[rest[0], ten, rest[1]].map((w) => (
-            <li key={w.part} className={w.highlight ? "top" : undefined}>
-              {w.highlight && (
-                <span className="warranty-flag">Longest cover</span>
-              )}
-              <span className="warranty-icon" aria-hidden="true">
-                {w.highlight ? (
-                  <ShieldCheck size={26} />
-                ) : w.years === 2 ? (
-                  <Settings2 size={24} />
-                ) : (
-                  <BadgeCheck size={24} />
-                )}
-              </span>
-              <p className="warranty-years">
-                <b>{w.years}</b> {w.years === 1 ? "year" : "years"}
-              </p>
-              <p className="warranty-part">{w.part}</p>
-            </li>
-          ))}
-        </ul>
+        <div className="warranty-chart">
+          <dl>
+            {business.warranty.map((w) => (
+              <div
+                key={w.part}
+                className={`warranty-row${w.highlight ? " top" : ""}`}
+              >
+                <dt>{w.part}</dt>
+                <dd>
+                  <b>{w.years}</b> {w.years === 1 ? "year" : "years"}
+                </dd>
+                {/* SVG width, not an inline style: the CSP blocks style attributes. */}
+                <svg
+                  className="warranty-bar"
+                  viewBox="0 0 100 1"
+                  preserveAspectRatio="none"
+                  aria-hidden="true"
+                >
+                  <rect width="100" height="1" className="track" />
+                  <rect width={(w.years / longest) * 100} height="1" />
+                </svg>
+              </div>
+            ))}
+          </dl>
+          <ol className="warranty-axis" aria-hidden="true">
+            {Array.from({ length: longest + 1 }, (_, y) => (
+              <li key={y}>{y % 2 === 0 ? y : ""}</li>
+            ))}
+          </ol>
+        </div>
       </div>
     </section>
   );
@@ -513,7 +708,6 @@ function VisitSection({ page }: { page: SitePage }) {
   return (
     <section className="section visit" aria-labelledby="visit-title">
       <div className="visit-card">
-        <p className="eyebrow">Visit the showroom</p>
         <h2 id="visit-title">Come and see the range</h2>
         <address>
           <strong>{business.legalName}</strong>
@@ -661,7 +855,9 @@ function Collections({
         Bath fittings and sanitary ware available through Lenore, Kuttiady.
       </p>
       {page.categories.length ? (
-        <CategoryGrid categories={page.categories} demo={page.demo} />
+        <div className="collections-index">
+          <CategoryGrid categories={page.categories} demo={page.demo} />
+        </div>
       ) : (
         <p className="muted">
           Our collection is being updated. Please check back soon.
@@ -764,8 +960,9 @@ function ProductPage({
             {p.description && <p className="description">{p.description}</p>}
             <Warranty compact />
             <div className="product-detail-actions">
+              <AddToCart product={p} large />
               <a
-                className="btn btn-primary btn-lg"
+                className="btn btn-ghost btn-lg"
                 href={whatsappLink(message, businessWhatsapp(page.whatsapp))}
                 target="_blank"
                 rel="noopener"
@@ -804,7 +1001,6 @@ function About({ page }: { page: SitePage }) {
     <>
       <section className="section page-top prose">
         <Breadcrumbs trail={[["About", "/about"]]} />
-        <p className="eyebrow">About Lenore</p>
         <h1>Refined bathroom living, close to home.</h1>
         <p className="lead">
           {business.legalName} supplies bath fittings and sanitary ware from its
@@ -835,35 +1031,6 @@ function About({ page }: { page: SitePage }) {
           </div>
         </dl>
       </section>
-      <section className="section brand-showcase" aria-labelledby="mark-title">
-        <div className="brand-showcase-copy">
-          <p className="eyebrow">Our mark</p>
-          <h2 id="mark-title">The Lenore name and L</h2>
-          <p>
-            You will find this mark on our showroom, our bills and every
-            quotation we send, so you always know it comes from{" "}
-            {business.legalName}.
-          </p>
-        </div>
-        <figure className="brand-panel light">
-          <img
-            src="/images/lenore-stacked-full-colour.svg"
-            alt="Lenore logo"
-            width={2564}
-            height={1886}
-            loading="lazy"
-          />
-        </figure>
-        <figure className="brand-panel dark">
-          <img
-            src="/images/lenore-stacked-reversed.svg"
-            alt=""
-            width={2564}
-            height={1886}
-            loading="lazy"
-          />
-        </figure>
-      </section>
       <Warranty />
       <VisitSection page={page} />
     </>
@@ -871,19 +1038,263 @@ function About({ page }: { page: SitePage }) {
 }
 
 function Contact({ page }: { page: SitePage }) {
+  const whatsapp = whatsappLink(
+    "Hello Lenore, I would like to visit the showroom.",
+    businessWhatsapp(page.whatsapp),
+  );
   return (
     <>
-      <section className="section page-top">
+      <section className="section page-top contact-page">
         <Breadcrumbs trail={[["Visit us", "/contact"]]} />
-        <p className="eyebrow">Contact</p>
-        <h1>Visit, call or message us</h1>
+        <div className="contact-grid">
+          <div className="contact-info">
+            <h1>Visit the showroom</h1>
+            <p className="lead">
+              See the finishes side by side before you decide. We are in
+              Vatayam, Kuttiady, near Mother Clinic.
+            </p>
+            <dl className="contact-list">
+              <div>
+                <dt>
+                  <MapPin size={18} aria-hidden="true" /> Address
+                </dt>
+                <dd>
+                  {business.legalName}
+                  <br />
+                  {business.address.street}
+                  <br />
+                  {business.address.locality}, {business.address.district},{" "}
+                  {business.address.region}
+                </dd>
+              </div>
+              <div>
+                <dt>
+                  <Phone size={18} aria-hidden="true" /> Phone
+                </dt>
+                <dd>
+                  <a href={telLink(business.phone)}>{business.phoneDisplay}</a>
+                </dd>
+              </div>
+              <div>
+                <dt>
+                  <MessageCircle size={18} aria-hidden="true" /> WhatsApp
+                </dt>
+                <dd>
+                  <a href={whatsapp} target="_blank" rel="noopener">
+                    Message us on WhatsApp
+                  </a>
+                </dd>
+              </div>
+              <div>
+                <dt>
+                  <Mail size={18} aria-hidden="true" /> Email
+                </dt>
+                <dd>
+                  <a href={`mailto:${business.email}`}>{business.email}</a>
+                </dd>
+              </div>
+            </dl>
+            <div className="contact-actions">
+              <a
+                className="btn btn-primary btn-lg"
+                href={mapsLink}
+                target="_blank"
+                rel="noopener"
+              >
+                <MapPin size={18} aria-hidden="true" /> Get directions
+              </a>
+              <a
+                className="btn btn-ghost btn-lg"
+                href={telLink(business.phone)}
+              >
+                <Phone size={18} aria-hidden="true" /> Call
+              </a>
+            </div>
+            <p className="contact-serves">
+              Serving {business.serves.slice(0, -1).join(", ")} and across{" "}
+              {business.address.district} district.
+            </p>
+          </div>
+          <figure className="contact-map">
+            <iframe
+              src={mapEmbed}
+              title="Map showing the Lenore showroom in Vatayam, Kuttiady"
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+            />
+            <figcaption>
+              <a href={mapsLink} target="_blank" rel="noopener">
+                Open in Google Maps{" "}
+                <ArrowUpRight size={14} aria-hidden="true" />
+              </a>
+            </figcaption>
+          </figure>
+        </div>
+      </section>
+      <section className="section contact-enquiry">
+        <div>
+          <h2>Planning a bathroom?</h2>
+          <p className="lead">
+            Send us your list or a few photos of the space, and we will help you
+            choose.
+          </p>
+        </div>
+        <EnquiryForm page={page} />
+      </section>
+    </>
+  );
+}
+
+const LEGAL_UPDATED = "22 October 2026";
+
+/** Privacy policy and terms; plain words, matching what the site actually does. */
+function Legal({ page }: { page: Extract<SitePage, { kind: "legal" }> }) {
+  const contact = (
+    <p>
+      {business.legalName}, {addressLine}. Email{" "}
+      <a href={`mailto:${business.email}`}>{business.email}</a> or call{" "}
+      <a href={telLink(business.phone)}>{business.phoneDisplay}</a>.
+    </p>
+  );
+  if (page.doc === "privacy")
+    return (
+      <section className="section page-top prose legal">
+        <Breadcrumbs trail={[["Privacy policy", "/privacy"]]} />
+        <h1>Privacy policy</h1>
         <p className="lead">
-          {addressLine}. Call {business.phoneDisplay} or email{" "}
-          <a href={`mailto:${business.email}`}>{business.email}</a>.
+          What we collect when you use this website or contact us, why, and the
+          choices you have. Last updated {LEGAL_UPDATED}.
+        </p>
+        <h2>Who we are</h2>
+        {contact}
+        <h2>What we collect</h2>
+        <ul>
+          <li>
+            <strong>Enquiries and cart requests:</strong> your name, phone
+            number, and anything you add (place, note, message), with the
+            products and quantities you chose.
+          </li>
+          <li>
+            <strong>Quotations and bills:</strong> the details needed to prepare
+            them, such as name, phone, address and GSTIN for businesses.
+          </li>
+          <li>
+            <strong>Product views:</strong> a daily count of how often each
+            product page is opened. It does not identify you.
+          </li>
+          <li>
+            <strong>Technical data:</strong> your IP address is used briefly to
+            stop misuse of the enquiry form, and our host keeps standard server
+            logs for security.
+          </li>
+        </ul>
+        <p>
+          We do not use advertising or tracking cookies. Visitors browsing the
+          website get no cookies; staff and catalogue sign-ins use a sign-in
+          cookie. Your cart and the name and phone you last entered are kept
+          only in your own browser, so you do not have to type them again; you
+          can clear them by clearing your browser&apos;s site data.
+        </p>
+        <h2>How we use it</h2>
+        <p>
+          To reply to you, prepare quotations, confirm and deliver orders, issue
+          GST invoices and provide warranty service. We do not sell or rent your
+          details, and we do not use them for marketing without your consent.
+        </p>
+        <h2>Who else handles it</h2>
+        <ul>
+          <li>
+            <strong>Cloudflare</strong> hosts this website and its data.
+          </li>
+          <li>
+            <strong>WhatsApp (Meta)</strong> carries the messages you choose to
+            send us there.
+          </li>
+          <li>
+            <strong>Google Maps</strong> shows the map on our Visit us page;
+            Google receives your request when that map loads.
+          </li>
+        </ul>
+        <h2>How long we keep it</h2>
+        <p>
+          Enquiries are kept while we follow them up and for a reasonable time
+          afterwards. Invoices and accounting records are kept for as long as
+          tax law requires.
+        </p>
+        <h2>Your rights</h2>
+        <p>
+          Under India&apos;s Digital Personal Data Protection Act, 2023, you can
+          ask to see, correct or delete the personal data we hold about you,
+          withdraw consent, and raise a grievance. Contact us using the details
+          above and we will respond promptly. Records we must keep by law, such
+          as invoices, cannot be deleted before that period ends.
+        </p>
+        <h2>Changes</h2>
+        <p>
+          We will update this page if our practices change, with a new date at
+          the top.
         </p>
       </section>
-      <VisitSection page={page} />
-    </>
+    );
+  return (
+    <section className="section page-top prose legal">
+      <Breadcrumbs trail={[["Terms of use", "/terms"]]} />
+      <h1>Terms of use</h1>
+      <p className="lead">
+        The terms for using this website and asking us for quotations or orders.
+        Last updated {LEGAL_UPDATED}.
+      </p>
+      <h2 id="images">Product images</h2>
+      <p>
+        Product photographs and specification posters on this website were
+        created or enhanced with AI tools, starting from photographs of the
+        actual products we sell. They are faithful representations, but finish,
+        colour, proportions and fine details can differ slightly from the
+        product you receive. Please see the product in our showroom, or ask us
+        on WhatsApp, if an exact detail matters to you.
+      </p>
+      <h2>Prices and product details</h2>
+      <p>
+        Prices are the maximum retail price (MRP), inclusive of taxes, and can
+        change without notice. We take care to keep codes, prices, stock status
+        and descriptions correct, but mistakes can happen; the price on your
+        quotation or bill is the one that applies.
+      </p>
+      <h2>Quotation and order requests</h2>
+      <p>
+        Sending a cart, enquiry or order request does not create an order or
+        reserve stock. An order is confirmed only when our team confirms it with
+        you and issues a bill. We do not take payments on this website.
+        Quotations are valid until the date shown on them.
+      </p>
+      <h2>Warranty, returns and exchanges</h2>
+      <p>
+        Warranty cover is{" "}
+        {business.warranty
+          .map(
+            (w) =>
+              `${w.years} ${w.years === 1 ? "year" : "years"} on ${w.part.replace(/^[A-Z][a-z]/, (m) => m.toLowerCase())}`,
+          )
+          .join(", ")}
+        , against manufacturing defects. Returns and exchanges follow the terms
+        printed on your bill; please keep the original bill.
+      </p>
+      <h2>Using this website</h2>
+      <p>
+        The Lenore name, logo, text and images on this website belong to{" "}
+        {business.legalName} and may not be reused without permission. Please do
+        not misuse the website or its forms.
+      </p>
+      <h2>Liability and law</h2>
+      <p>
+        This website is provided as it is. To the extent the law allows, we are
+        not liable for indirect losses arising from its use. These terms are
+        governed by the laws of India, and the courts of Kozhikode, Kerala have
+        jurisdiction.
+      </p>
+      <h2>Contact</h2>
+      {contact}
+    </section>
   );
 }
 
@@ -1005,6 +1416,8 @@ function Breadcrumbs({ trail }: { trail: [string, string][] }) {
 }
 
 export function Site({ page }: { page: SitePage }) {
+  const [cartOpen, setCartOpen] = useState(false);
+  const openCart = useCallback(() => setCartOpen(true), []);
   let body: ReactNode;
   switch (page.kind) {
     case "home":
@@ -1025,6 +1438,9 @@ export function Site({ page }: { page: SitePage }) {
     case "contact":
       body = <Contact page={page} />;
       break;
+    case "legal":
+      body = <Legal page={page} />;
+      break;
     case "quote":
       body = <QuotePage page={page} />;
       break;
@@ -1032,14 +1448,29 @@ export function Site({ page }: { page: SitePage }) {
       body = <NotFound />;
   }
   return (
-    <div className="site">
-      <a className="skip-link" href="#main">
-        Skip to content
-      </a>
-      <Header page={page} />
-      <main id="main">{body}</main>
-      <Footer />
-      {page.kind !== "quote" && <ActionBar page={page} />}
-    </div>
+    <OpenCart.Provider value={openCart}>
+      <div className="site">
+        <a className="skip-link" href="#main">
+          Skip to content
+        </a>
+        <Header page={page} />
+        <main id="main">{body}</main>
+        <Footer />
+        {page.kind !== "quote" && (
+          <ActionBar
+            whatsappHref={whatsappLink(
+              "Hello Lenore, I would like to know more about your bath fittings.",
+              businessWhatsapp(page.whatsapp),
+            )}
+          />
+        )}
+        <CartToast />
+        <CartPanel
+          open={cartOpen}
+          onClose={() => setCartOpen(false)}
+          whatsapp={page.whatsapp}
+        />
+      </div>
+    </OpenCart.Provider>
   );
 }

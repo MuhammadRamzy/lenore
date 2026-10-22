@@ -11,3 +11,4 @@ test-results/
 *.tsbuildinfo
 local-access.txt
 creds.md
+production-access.txt

@@ -16,12 +16,14 @@ import {
 } from "lucide-react";
 import {
   discounted,
+  listPriceOf,
   money,
   percent,
   type CatalogueLevel,
   type CatalogueProduct,
   type Quotation,
   type QuotationStatus,
+  type QuoteCustomer,
   type SessionInfo,
 } from "../../shared";
 import { api, errorMessage } from "../api";
@@ -57,9 +59,20 @@ export function pricingFor(
     return { discount: true, price: true, maxBp: 10000 };
   return { discount: false, price: false, maxBp: 0 };
 }
-const unitOf = (l: DraftLine, p?: CatalogueProduct) =>
+/** Mirrors the server: untouched lines take the customer's price-list price. */
+const unitOf = (
+  l: DraftLine,
+  p?: CatalogueProduct,
+  list?: QuoteCustomer["priceList"],
+) =>
   l.unitPricePaise ??
-  (p?.pricePaise == null ? null : discounted(p.pricePaise, l.discountBp));
+  (p?.pricePaise == null
+    ? null
+    : l.discountBp || !list
+      ? discounted(p.pricePaise, l.discountBp)
+      : listPriceOf(list, p.id, p.pricePaise));
+export const loadQuoteCustomer = (id: string) =>
+  api<QuoteCustomer>(`/quotation-customers/${encodeURIComponent(id)}`);
 const rupees = (paise: number | null) =>
   paise === null ? "" : String(paise / 100);
 
@@ -72,6 +85,7 @@ export function QuoteBuilder({
   pricing,
   config,
   level,
+  admin,
   onSaved,
   onBrowse,
 }: {
@@ -83,6 +97,8 @@ export function QuoteBuilder({
   pricing: Pricing;
   config: AppConfig;
   level: CatalogueLevel;
+  /** Only owners and admins link saved customers (and their price lists). */
+  admin: boolean;
   onSaved: (q: Quotation) => void;
   onBrowse: () => void;
 }) {
@@ -98,8 +114,9 @@ export function QuoteBuilder({
     product: byId.get(l.productId),
   }));
   const missing = lines.filter((l) => !l.product).length;
+  const list = draft.customer?.priceList;
   const amounts = lines.map(({ line, product }) => {
-    const unit = unitOf(line, product);
+    const unit = unitOf(line, product, list);
     return unit === null ? null : unit * line.quantity;
   });
   const total = amounts.some((a) => a === null)
@@ -161,6 +178,7 @@ export function QuoteBuilder({
         customerName: draft.customerName,
         customerPhone: draft.customerPhone,
         customerPlace: draft.customerPlace,
+        customerId: draft.customer?.id ?? null,
         notes: draft.notes,
         validUntil: draft.validUntil,
         items: draft.lines,
@@ -211,6 +229,21 @@ export function QuoteBuilder({
 
       <fieldset className="card form-card">
         <legend>Customer</legend>
+        {admin && (
+          <SavedCustomer
+            customer={draft.customer ?? null}
+            onPick={(customer) =>
+              setDraft((d) => ({
+                ...d,
+                customer,
+                customerName: customer?.name ?? d.customerName,
+                customerPhone: customer?.phone ?? d.customerPhone,
+                customerPlace:
+                  (customer && d.customerPlace) || customer?.address || "",
+              }))
+            }
+          />
+        )}
         <label>
           Name
           <input
@@ -282,7 +315,7 @@ export function QuoteBuilder({
         )}
         <ul className="quote-lines">
           {lines.map(({ line, product }) => {
-            const unit = unitOf(line, product);
+            const unit = unitOf(line, product, list);
             return (
               <li key={line.productId} className={product ? "" : "unavailable"}>
                 {product ? (
@@ -375,10 +408,16 @@ export function QuoteBuilder({
                           ? "On request"
                           : money(unit * line.quantity)}
                       </strong>
-                      {line.discountBp > 0 && (
+                      {line.discountBp > 0 ? (
                         <span className="accent">
                           −{percent(line.discountBp)}
                         </span>
+                      ) : (
+                        list &&
+                        line.unitPricePaise === null &&
+                        unit !== product.pricePaise && (
+                          <span className="accent">{list.name}</span>
+                        )
                       )}
                       <button
                         type="button"
@@ -467,6 +506,90 @@ const statusLabel: Record<QuotationStatus, string> = {
   won: "Won",
   lost: "Lost",
 };
+
+/** Links the quotation to a saved customer so their price list applies. */
+function SavedCustomer({
+  customer,
+  onPick,
+}: {
+  customer: QuoteCustomer | null;
+  onPick: (c: QuoteCustomer | null) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [found, setFound] = useState<
+    { id: string; name: string; phone: string; list: string | null }[]
+  >([]);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) return;
+    const timer = setTimeout(() => {
+      api<typeof found>(`/quotation-customers?q=${encodeURIComponent(q)}`)
+        .then(setFound)
+        .catch((e) => setError(errorMessage(e)));
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [query]);
+  if (customer)
+    return (
+      <p className="saved-customer">
+        Saved customer: <strong>{customer.name}</strong>
+        {customer.priceList
+          ? ` · price list ${customer.priceList.name}`
+          : " · MRP"}{" "}
+        <button type="button" className="text-btn" onClick={() => onPick(null)}>
+          Unlink
+        </button>
+      </p>
+    );
+  return (
+    <div className="saved-customer">
+      <label>
+        Saved customer (optional)
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => {
+            setError("");
+            setQuery(e.target.value);
+          }}
+          placeholder="Search by name or phone"
+          autoComplete="off"
+        />
+      </label>
+      {error && (
+        <p className="banner error" role="alert">
+          {error}
+        </p>
+      )}
+      {query.trim().length >= 2 && found.length > 0 && (
+        <ul className="customer-results">
+          {found.map((c) => (
+            <li key={c.id}>
+              <button
+                type="button"
+                className="text-btn"
+                onClick={() =>
+                  loadQuoteCustomer(c.id)
+                    .then((full) => {
+                      setQuery("");
+                      setFound([]);
+                      onPick(full);
+                    })
+                    .catch((e) => setError(errorMessage(e)))
+                }
+              >
+                {c.name}
+                {c.phone && ` · ${c.phone}`}
+                {c.list && ` · ${c.list}`}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 export function QuoteDetail({
   quote,

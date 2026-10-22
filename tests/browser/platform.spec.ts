@@ -36,12 +36,14 @@ function cleanFixtures() {
       `DELETE FROM stock_movements WHERE product_id IN (${products})`,
       `DELETE FROM product_views WHERE product_id IN (${products})`,
       "DELETE FROM products WHERE code LIKE 'E2E-%'",
-      "DELETE FROM quotes WHERE name='E2E buyer'",
+      "DELETE FROM quotes WHERE name IN ('E2E buyer','E2E Cart Buyer')",
       // Quotation history is immutable in normal operation; tests lift the guard locally.
       "DROP TRIGGER quotation_versions_no_delete",
       "DELETE FROM quotation_versions WHERE quotation_id IN (SELECT id FROM quotations WHERE customer_name LIKE 'E2E %')",
       "CREATE TRIGGER quotation_versions_no_delete BEFORE DELETE ON quotation_versions BEGIN SELECT RAISE(ABORT, 'Quotation history cannot be deleted.'); END",
       "DELETE FROM quotations WHERE customer_name LIKE 'E2E %'",
+      "DELETE FROM customers WHERE name='E2E Dealer'",
+      "DELETE FROM price_lists WHERE name='E2E dealer list'",
       `DELETE FROM sessions WHERE user_id IN (SELECT id FROM staff_users WHERE phone='${SALES_PHONE}')`,
       `DELETE FROM staff_users WHERE phone='${SALES_PHONE}'`,
       "UPDATE catalogue_access SET mode='public',enabled=0,generation=generation+1,revision=revision+1 WHERE id=1",
@@ -90,22 +92,33 @@ test("website is server-rendered, navigable and accepts enquiries on desktop and
     await page.setViewportSize({ width, height: 900 });
     const response = await page.goto("/");
     const html = await response!.text();
-    expect(html).toContain("Refined bathroom living");
+    expect(html).toContain("Your bathroom, <span>considered.</span>");
     expect(html).toContain('"@type":"HomeAndConstructionBusiness"');
     await expect(page.getByRole("heading", { level: 1 })).toContainText(
-      "Refined bathroom living",
+      "Your bathroom, considered.",
     );
     await expect(page.getByText("GSTIN 32AANFL0054E1ZR").first()).toBeVisible();
     if (width === 390) {
       await page.getByRole("button", { name: "Open menu" }).click();
+      const menu = page.getByRole("dialog", { name: "Menu" });
+      await expect(menu.getByRole("link", { name: "About" })).toBeVisible();
+      await menu.locator("summary").click();
       await expect(
-        page
-          .getByRole("navigation", { name: "Main navigation" })
-          .getByRole("link", { name: "About" }),
+        menu.getByRole("link", { name: /All collections/ }),
       ).toBeVisible();
+      await menu.getByRole("button", { name: "Close menu" }).click();
       await expect(
         page.getByRole("navigation", { name: "Quick contact" }),
       ).toBeVisible();
+    } else {
+      await page.getByRole("button", { name: "Collections" }).click();
+      await expect(
+        page.locator("#collections-panel").getByRole("link", {
+          name: /All collections/,
+        }),
+      ).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.locator("#collections-panel")).toHaveCount(0);
     }
   }
   await page.goto("/collections/showers");
@@ -181,6 +194,48 @@ test("a visitor builds, saves and shares a quotation from the phone catalogue", 
   await expect(page.getByRole("button", { name: /E2E Rahim/ })).toBeVisible();
 });
 
+test("staff quotations apply a saved customer's price list", async ({
+  page,
+}) => {
+  sql(
+    "INSERT INTO price_lists(id,name,discount_bp) VALUES('00000000-0000-4000-8000-0000000e2e01','E2E dealer list',1000); " +
+      "INSERT INTO customers(id,name,phone,address,price_list_id) VALUES('00000000-0000-4000-8000-0000000e2e02','E2E Dealer','9847022222','Vatakara','00000000-0000-4000-8000-0000000e2e01')",
+  );
+  await signIn(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/catalogue");
+  const search = page.getByLabel("Search products");
+  await search.fill("DEMO-BM01");
+  await search.press("Enter");
+  await expect(page.getByText("DEMO-BM01 added")).toBeVisible();
+  await page
+    .getByRole("navigation", { name: "Catalogue sections" })
+    .last()
+    .getByRole("link", { name: /Quote/ })
+    .click();
+  await page.getByLabel("Saved customer (optional)").fill("E2E Deal");
+  await page.getByRole("button", { name: /E2E Dealer/ }).click();
+  await expect(page.getByText("price list E2E dealer list")).toBeVisible();
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue(
+    "E2E Dealer",
+  );
+  await expect(page.getByLabel("Place / site")).toHaveValue("Vatakara");
+  await expect(
+    page.locator(".line-amount").getByText("E2E dealer list"),
+  ).toBeVisible();
+  await axe(page);
+  const saved = page.waitForResponse(
+    (r) =>
+      r.url().endsWith("/api/quotations") && r.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: /Save & share/ }).click();
+  const q = await (await saved).json();
+  expect(q.customerId).toBe("00000000-0000-4000-8000-0000000e2e02");
+  expect(q.items[0].unitPricePaise).toBe(
+    Math.floor((q.items[0].mrpPaise * 9000 + 5000) / 10000),
+  );
+});
+
 test("admins add a salesperson, lock the catalogue to accounts and allow capped discounts", async ({
   page,
   browser,
@@ -213,8 +268,9 @@ test("admins add a salesperson, lock the catalogue to accounts and allow capped 
   await seller.getByLabel("Phone number").fill(SALES_PHONE);
   await seller.getByLabel("Password").fill(SALES_PASSWORD);
   await seller.getByRole("button", { name: "Open catalogue" }).click();
-  // Salespeople see exact quantities (the demo stock changes as tests bill it).
-  await expect(seller.getByText(/^In stock · \d+ pcs$/).first()).toBeVisible();
+  // Salespeople see stock status, never the quantity.
+  await expect(seller.getByText(/^In stock$/).first()).toBeVisible();
+  await expect(seller.getByText(/^In stock · \d+/)).toHaveCount(0);
   await seller.getByRole("button", { name: "Add DEMO-AC04 to quote" }).click();
   await seller.goto("/catalogue/quote");
   await seller.getByLabel("Name", { exact: true }).fill("E2E Builder");
@@ -271,11 +327,158 @@ test("admins create, publish and stock a product, and the catalogue reflects it"
   await page.getByLabel("Reason").fill("Goods received from supplier");
   await page.getByRole("button", { name: /Record adjustment/ }).click();
   await expect(page.getByText(/saved|recorded/i).first()).toBeVisible();
+  // Capture what the share sheet would receive.
+  await page.addInitScript(() => {
+    const w = window as unknown as { shared: unknown };
+    Object.assign(navigator, {
+      canShare: () => true,
+      share: async (d: { files?: File[]; text?: string }) => {
+        w.shared = {
+          text: d.text,
+          type: d.files?.[0]?.type,
+          name: d.files?.[0]?.name,
+          size: d.files?.[0]?.size,
+        };
+      },
+    });
+  });
   await page.goto("/catalogue");
   await page.getByLabel("Search products").fill(code);
-  await expect(
-    page.getByRole("button", { name: new RegExp(`E2E chrome mixer, ${code}`) }),
-  ).toBeVisible();
+  const tile = page.getByRole("button", {
+    name: new RegExp(`E2E chrome mixer, ${code}`),
+  });
+  await expect(tile).toBeVisible();
+  await tile.click();
+  // Company staff see the shelf; salespeople do not (API test).
+  await expect(page.getByText("Shelf Z-09")).toBeVisible();
+  await page.getByRole("button", { name: "Share", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as unknown as { shared?: unknown }).shared),
+    )
+    .toMatchObject({
+      type: "image/jpeg",
+      name: `Lenore-${code}.jpg`,
+      text: expect.stringContaining("E2E chrome mixer"),
+    });
+});
+
+test("continuous camera scanning counts a held barcode once and shows each result", async ({
+  page,
+}) => {
+  // A fake camera and barcode reader: the test decides what is "in view".
+  await page.addInitScript(() => {
+    const w = window as unknown as Record<string, unknown>;
+    w.inView = null;
+    w.BarcodeDetector = class {
+      async detect() {
+        return w.inView ? [{ rawValue: w.inView as string }] : [];
+      }
+    };
+    navigator.mediaDevices.getUserMedia = async () => {
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d")!;
+      setInterval(() => ctx.fillRect(0, 0, 10, 10), 50);
+      return canvas.captureStream(10);
+    };
+  });
+  const show = (code: string | null) =>
+    page.evaluate((c) => {
+      (window as unknown as Record<string, unknown>).inView = c;
+    }, code);
+  await signIn(page);
+  await page.getByRole("button", { name: "Inventory", exact: true }).click();
+  await page.getByRole("button", { name: "Stock count" }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Scan with camera" })
+    .click();
+  const status = page.locator(".scanner-status");
+  await show("DEMO-BM01");
+  await expect(page.locator(".scanner.hit-ok")).toBeVisible();
+  await expect(status).toContainText("1 counted");
+  // Held in view: no second count, and a hint to move it away.
+  await expect(status).toContainText("Same barcode", { timeout: 4000 });
+  await expect(page.getByText("1 scanned")).toBeVisible();
+  await show(null);
+  await page.waitForTimeout(1300);
+  await show("DEMO-BM01");
+  await expect(page.getByText("2 scanned")).toBeVisible();
+  await expect(status).toContainText("2 counted");
+  await show(null);
+  await page.waitForTimeout(1300);
+  await show("NOT-A-PRODUCT");
+  await expect(page.locator(".scanner.hit-bad")).toBeVisible();
+  await expect(status).toContainText("no product");
+});
+
+test("visitors fill a cart on the website and send an order request on WhatsApp", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const w = window as unknown as { opened?: string };
+    window.open = ((url: string) => {
+      w.opened = url;
+      return null;
+    }) as typeof window.open;
+  });
+  await page.goto("/");
+  const card = page.locator(".product-card").first();
+  const name = await card.locator("h3").innerText();
+  await card.getByRole("button", { name: "Add to cart" }).click();
+  await card.getByRole("button", { name: /Increase/ }).click();
+  await page.getByRole("button", { name: "Cart, 2 items" }).click();
+  const cart = page.getByRole("dialog", { name: /Your cart/ });
+  await expect(cart).toContainText(name);
+  await axe(page);
+  await cart.getByLabel("Order").check();
+  await cart.getByLabel("Name").fill("E2E Cart Buyer");
+  await cart.getByLabel("Phone").fill("9847012345");
+  await cart.getByLabel(/Place/).fill("Kuttiady");
+  await cart
+    .getByRole("button", { name: "Send order request on WhatsApp" })
+    .click();
+  await expect(cart.getByText("Request sent")).toBeVisible();
+  const opened = decodeURIComponent(
+    (await page.evaluate(
+      () => (window as unknown as { opened?: string }).opened,
+    ))!,
+  );
+  expect(opened).toMatch(/^https:\/\/wa\.me\/\d+\?text=/);
+  expect(opened).toContain("I would like to order");
+  expect(opened).toContain(`${name}`);
+  expect(opened).toContain("× 2");
+  expect(opened).toContain("Name: E2E Cart Buyer");
+  await cart.getByRole("button", { name: "Clear cart and close" }).click();
+  await expect(page.getByRole("button", { name: "Cart, empty" })).toBeVisible();
+});
+
+test("the billing counter shows reduced stock right after a sale", async ({
+  page,
+}) => {
+  // Repeated runs bill this demo item; start each run from a known level.
+  sql("UPDATE products SET stock=50 WHERE code='DEMO-BM01'");
+  await signIn(page);
+  await page.goto("/pos");
+  const shift = page.getByRole("button", { name: "Open shift" });
+  const search = page.getByLabel("Scan or search products");
+  await expect(shift.or(search)).toBeVisible();
+  if (await shift.isVisible()) {
+    await page.getByLabel("Opening cash (₹)").fill("0");
+    await shift.click();
+  }
+  await search.fill("DEMO-BM01");
+  const tile = page.locator(".pos-tile", { hasText: "DEMO-BM01" });
+  const stockOf = async () =>
+    Number((await tile.locator(".pos-stock").innerText()).split(" ")[0]);
+  const before = await stockOf();
+  expect(before).toBeGreaterThan(0);
+  await tile.click();
+  await page.keyboard.press("F4");
+  await page.getByRole("button", { name: "Complete sale" }).click();
+  await page.getByRole("button", { name: /New bill/ }).click();
+  await search.fill("DEMO-BM01");
+  await expect.poll(stockOf).toBe(before - 1);
 });
 
 test("the sales catalogue is an installable PWA with an offline shell", async ({

@@ -402,9 +402,9 @@ const customer = (r: CustomerRow): Customer => ({
 });
 
 /** Lowest unit price a non-admin may charge, from MRP or the customer's price list. */
-async function priceFloors(
+export async function priceFloors(
   db: D1Database,
-  customerRow: CustomerRow | null,
+  customerRow: Pick<CustomerRow, "price_list_id"> | null,
   ids: string[],
 ) {
   const listPrices = new Map<string, number>();
@@ -1085,6 +1085,13 @@ const result = (c: AppContext, r: unknown, okStatus: 200 | 201 = 200) =>
     ? c.json({ error: r.fail.message }, r.fail.status as 400)
     : c.json(r as object, okStatus);
 
+/** Current stock for the counter's periodic refresh (the bootstrap is much larger). */
+routes.get("/pos/stock", async (c) => {
+  const rows = await c.env.DB.prepare(
+    "SELECT id,stock FROM products LIMIT 5000",
+  ).all<{ id: string; stock: number }>();
+  return c.json(rows.results);
+});
 routes.get("/pos/bootstrap", async (c) => {
   const device = z.string().min(8).max(64).parse(c.req.query("device"));
   const db = c.env.DB;
@@ -1281,24 +1288,31 @@ routes.get("/pos/quotation", async (c) => {
     .parse(c.req.query("number"))
     .toUpperCase();
   const row = await c.env.DB.prepare(
-    "SELECT id,number,customer_name,customer_phone,items_json,status FROM quotations WHERE number=?",
+    "SELECT id,number,customer_id,customer_name,customer_phone,items_json,status FROM quotations WHERE number=?",
   )
     .bind(number)
     .first<{
       id: string;
       number: string;
+      customer_id: string | null;
       customer_name: string;
       customer_phone: string;
       items_json: string;
       status: string;
     }>();
   if (!row) return c.json({ error: `Quotation ${number} was not found.` }, 404);
+  const linked = row.customer_id
+    ? await c.env.DB.prepare(`${CUSTOMER_SELECT} WHERE c.id=?`)
+        .bind(row.customer_id)
+        .first<CustomerRow>()
+    : null;
   return c.json({
     id: row.id,
     number: row.number,
     status: row.status,
     customerName: row.customer_name,
     customerPhone: row.customer_phone,
+    customer: linked ? customer(linked) : null,
     items: JSON.parse(row.items_json),
   });
 });

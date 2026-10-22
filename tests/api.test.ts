@@ -7,7 +7,7 @@ import type { Product, CatalogueProduct } from "../src/shared";
 import { sha256 } from "../src/server/auth";
 import { cleanup } from "../src/server/index";
 import { quotationText } from "../src/client/quotation";
-import type { Quotation, TeamMember } from "../src/shared";
+import type { Quotation, QuoteCustomer, TeamMember } from "../src/shared";
 import { inventoryCsv } from "../src/client/export";
 import { upiLink } from "../src/erp";
 import {
@@ -421,6 +421,46 @@ describe("atomic inventory", () => {
   });
 });
 
+describe("catalogue refresh", () => {
+  it("answers unchanged polls with 304 and notices stock, product and website changes", async () => {
+    const p = await create({ published: true });
+    const poll = async (etag?: string) => {
+      const r = await SELF.fetch(`${base}/api/catalogue`, {
+        headers: {
+          Origin: base,
+          Cookie: `lenore_session=${token}`,
+          ...(etag ? { "If-None-Match": etag } : {}),
+        },
+      });
+      return { status: r.status, etag: r.headers.get("ETag")! };
+    };
+    let { etag } = await poll();
+    expect((await poll(etag)).status).toBe(304);
+    const changes = [
+      () => adjust(p, 3),
+      () =>
+        bindings.DB.prepare("UPDATE products SET name='Renamed' WHERE id=?")
+          .bind(p.id)
+          .run(),
+      () =>
+        bindings.DB.prepare(
+          "INSERT INTO website_categories(name,hidden) VALUES('Basin mixers',1)",
+        ).run(),
+      () =>
+        bindings.DB.prepare(
+          "UPDATE website_settings SET show_stock=0 WHERE id=1",
+        ).run(),
+    ];
+    for (const change of changes) {
+      await change();
+      const next = await poll(etag);
+      expect(next.status).toBe(200);
+      etag = next.etag;
+      expect((await poll(etag)).status).toBe(304);
+    }
+  });
+});
+
 describe("website enquiries", () => {
   const enquiry = () => ({
     id: crypto.randomUUID(),
@@ -465,6 +505,59 @@ describe("website enquiries", () => {
         )
       ).status,
     ).toBe(400);
+  });
+  it("records website cart requests with catalogue names and MRP, website products only", async () => {
+    const shown = await create({
+      code: "CART-1",
+      published: true,
+      pricePaise: 125000,
+    });
+    const hidden = await create({ code: "CART-2", published: true });
+    await bindings.DB.prepare("UPDATE products SET on_website=0 WHERE id=?")
+      .bind(hidden.id)
+      .run();
+    const r = await request(
+      "/enquiries",
+      {
+        ...enquiry(),
+        interest: "",
+        kind: "order",
+        items: [
+          { productId: shown.id, quantity: 3 },
+          { productId: hidden.id, quantity: 1 },
+        ],
+      },
+      "POST",
+      false,
+    );
+    expect(r.status).toBe(201);
+    const [saved] = (await (await request("/admin/quotes")).json()) as {
+      notes: string;
+      items: { code: string; quantity: number; pricePaise: number }[];
+    }[];
+    expect(saved.notes).toContain("Order request from the website cart");
+    expect(saved.items).toEqual([
+      expect.objectContaining({
+        code: "CART-1",
+        quantity: 3,
+        pricePaise: 125000,
+      }),
+    ]);
+    // Only hidden products: nothing to record.
+    expect(
+      (
+        await request(
+          "/enquiries",
+          {
+            ...enquiry(),
+            kind: "quote",
+            items: [{ productId: hidden.id, quantity: 1 }],
+          },
+          "POST",
+          false,
+        )
+      ).status,
+    ).toBe(409);
   });
 });
 
@@ -570,6 +663,7 @@ describe("quotation text", () => {
     createdBy: null,
     createdByName: "Asha",
     createdByPhone: "919876543210",
+    customerId: null,
     customerName: "Buyer",
     customerPhone: "9999999999",
     customerPlace: "Kuttiady",
@@ -1486,8 +1580,10 @@ function quoteBody(
 }
 
 describe("team accounts and roles", () => {
-  it("lets salespeople into the catalogue with exact stock but not the workspace", async () => {
-    const p = await create({ published: true });
+  it("lets salespeople into the catalogue with stock status only, not the workspace", async () => {
+    const p = await create({ published: true, bin: "A-3" } as Partial<
+      typeof body
+    >);
     await adjust(p, 7);
     const sales = await member();
     const call = as(sales.cookie);
@@ -1500,7 +1596,27 @@ describe("team accounts and roles", () => {
     const rows = (await (
       await call("/catalogue")
     ).json()) as CatalogueProduct[];
-    expect(rows[0].stock).toBe(7);
+    expect(rows[0]).toMatchObject({
+      stock: null,
+      bin: "",
+      availability: "Available",
+    });
+    const one = (await (
+      await call(`/catalogue/${rows[0].slug}`)
+    ).json()) as CatalogueProduct;
+    expect(one.stock).toBeNull();
+    // Company staff (owner, admins, cashiers) still see the exact count.
+    const own = (await (
+      await request("/catalogue")
+    ).json()) as CatalogueProduct[];
+    expect(own[0]).toMatchObject({ stock: 7, bin: "A-3" });
+    await bindings.DB.prepare("UPDATE staff_users SET pos_access=1 WHERE id=?")
+      .bind(sales.id)
+      .run();
+    const cashier = (await (
+      await call("/catalogue")
+    ).json()) as CatalogueProduct[];
+    expect(cashier[0].stock).toBe(7);
   });
   it("admits salespeople in accounts-only mode and locks everyone else out", async () => {
     await create({ published: true });
@@ -1929,6 +2045,19 @@ describe("inventory management", () => {
 
 describe("search engine rendering", () => {
   const page = (path: string) => SELF.fetch(`${base}${path}`);
+  it("serves the privacy policy and terms, listed in the sitemap", async () => {
+    const privacy = await page("/privacy");
+    expect(privacy.status).toBe(200);
+    const p = await privacy.text();
+    expect(p).toContain("<h1>Privacy policy</h1>");
+    expect(p).toContain("Digital Personal Data Protection Act, 2023");
+    const terms = await (await page("/terms")).text();
+    expect(terms).toContain("<h1>Terms of use</h1>");
+    expect(terms).toContain("created or enhanced with AI tools");
+    const map = await (await page("/sitemap.xml")).text();
+    expect(map).toContain("/privacy</loc>");
+    expect(map).toContain("/terms</loc>");
+  });
   it("renders the home page with metadata, structured business data and content", async () => {
     await create({
       published: true,
@@ -1945,7 +2074,7 @@ describe("search engine rendering", () => {
     expect(html).toContain('<link rel="canonical" href="https://lenore.test/"');
     expect(html).toContain('"taxID":"32AANFL0054E1ZR"');
     expect(html).toContain('"addressLocality":"Kuttiady"');
-    expect(html).toContain("Refined bathroom living");
+    expect(html).toContain("Your bathroom, <span>considered.</span>");
     expect(html).toContain('id="page-data"');
     expect(r.headers.get("content-security-policy")).toContain(
       "frame-ancestors 'none'",
@@ -2386,6 +2515,255 @@ describe("ERP and POS", () => {
       expectedCash: 200000 + 118000 - 50000 - 8000,
     });
   });
+  it("applies a customer's price list to admin quotations and bills", async () => {
+    const special = await stocked({ code: "PL-1", pricePaise: 100000 });
+    const other = await stocked({ code: "PL-2", pricePaise: 50000 });
+    const listId = crypto.randomUUID();
+    const customerId = crypto.randomUUID();
+    await bindings.DB.batch([
+      bindings.DB.prepare(
+        "INSERT INTO price_lists(id,name,discount_bp) VALUES(?,?,1000)",
+      ).bind(listId, `Dealer ${listId.slice(0, 6)}`),
+      bindings.DB.prepare(
+        "INSERT INTO price_list_items(price_list_id,product_id,price_paise) VALUES(?,?,80000)",
+      ).bind(listId, special.id),
+      bindings.DB.prepare(
+        "INSERT INTO customers(id,name,phone,price_list_id) VALUES(?,'Dealer Co','9847011111',?)",
+      ).bind(customerId, listId),
+    ]);
+    const body = {
+      ...quoteBody([
+        { productId: special.id, quantity: 2 },
+        { productId: other.id, quantity: 1 },
+      ]),
+      customerId,
+    };
+    // Salespeople cannot search or link saved customers.
+    const sales = await member();
+    const call = as(sales.cookie);
+    expect((await call(`/quotation-customers/${customerId}`)).status).toBe(403);
+    expect((await call("/quotation-customers?q=Dealer")).status).toBe(403);
+    expect((await call("/quotations", body, "POST")).status).toBe(409);
+    // Admins get the dealer's list prices on untouched lines.
+    const picked = (await (
+      await request(`/quotation-customers/${customerId}`)
+    ).json()) as QuoteCustomer;
+    expect(picked.priceList).toMatchObject({
+      discountBp: 1000,
+      prices: { [special.id]: 80000 },
+    });
+    const created = await request("/quotations", body, "POST");
+    expect(created.status).toBe(201);
+    const q = (await created.json()) as Quotation;
+    expect(q.customerId).toBe(customerId);
+    expect(q.items.map((i) => i.unitPricePaise)).toEqual([80000, 45000]);
+    expect(q.items.map((i) => i.discountBp)).toEqual([2000, 1000]);
+    expect(q.totalPaise).toBe(205000);
+    expect(
+      (
+        await request(
+          "/quotations",
+          {
+            ...quoteBody([{ productId: other.id, quantity: 1 }]),
+            customerId: crypto.randomUUID(),
+          },
+          "POST",
+        )
+      ).status,
+    ).toBe(409);
+    // The counter loads the quotation with its customer.
+    const loaded = (await (
+      await request(`/pos/quotation?number=${q.number}`)
+    ).json()) as { customer: { id: string; priceListId: string } | null };
+    expect(loaded.customer).toMatchObject({
+      id: customerId,
+      priceListId: listId,
+    });
+    // A non-admin cashier may bill at the list price but not below it.
+    await bindings.DB.prepare("UPDATE staff_users SET pos_access=1 WHERE id=?")
+      .bind(sales.id)
+      .run();
+    const b = await block();
+    const at = (seq: number, rate: number) =>
+      as(sales.cookie)(
+        "/pos/invoices",
+        bill(
+          b,
+          seq,
+          [
+            {
+              productId: special.id,
+              qty: 1,
+              rate: 100000,
+              discount: 100000 - rate,
+            },
+          ],
+          {
+            customerId,
+            quotationId: q.id,
+            payments: [
+              {
+                id: crypto.randomUUID(),
+                method: "cash",
+                amount: rate,
+                reference: "",
+              },
+            ],
+          },
+        ),
+        "POST",
+      );
+    expect((await at(0, 79000)).status).toBe(403);
+    expect((await at(1, 80000)).status).toBe(201);
+  });
+  it("keeps stock equal to its ledger through purchases, sales, returns, counts and simultaneous bills", async () => {
+    const p = await stocked({ code: "LIFE-1", pricePaise: 10000 }, 0);
+    const stockNow = async () =>
+      (await bindings.DB.prepare("SELECT stock FROM products WHERE id=?")
+        .bind(p.id)
+        .first("stock")) as number;
+    const sup = (await (
+      await request(
+        "/admin/erp/suppliers",
+        {
+          name: "Ledger Co",
+          phone: "",
+          gstin: "",
+          stateCode: "32",
+          address: "",
+          notes: "",
+        },
+        "POST",
+      )
+    ).json()) as { id: string };
+    const purchaseId = crypto.randomUUID();
+    expect(
+      (
+        await request(
+          "/admin/erp/purchases",
+          {
+            id: purchaseId,
+            supplierId: sup.id,
+            billNumber: "LIFE-B1",
+            date: today,
+            lines: [
+              { productId: p.id, qty: 20, costPaise: 5000, gstRateBp: 1800 },
+            ],
+            notes: "",
+            payment: null,
+          },
+          "POST",
+        )
+      ).status,
+    ).toBe(201);
+    expect(await stockNow()).toBe(20);
+    const b = await block();
+    const sale = (seq: number, qty: number) =>
+      bill(b, seq, [{ productId: p.id, qty, rate: 10000 }], {
+        payments: [
+          {
+            id: crypto.randomUUID(),
+            method: "cash",
+            amount: qty * 10000,
+            reference: "",
+          },
+        ],
+      });
+    const first = (await (
+      await request("/pos/invoices", sale(0, 3), "POST")
+    ).json()) as { invoice: { id: string } };
+    expect(await stockNow()).toBe(17);
+    // Customer returns 2: one back on the shelf, one damaged.
+    for (const restock of [true, false])
+      expect(
+        (
+          await request(
+            `/pos/invoices/${first.invoice.id}/credit-notes`,
+            {
+              id: crypto.randomUUID(),
+              reason: "Customer return",
+              restock,
+              lines: [{ lineNo: 1, qty: 1 }],
+              refundMethod: "cash",
+              refundReference: "",
+              shiftId: null,
+            },
+            "POST",
+          )
+        ).status,
+      ).toBe(201);
+    expect(await stockNow()).toBe(18);
+    // Two goes back to the supplier.
+    expect(
+      (
+        await request(
+          `/admin/erp/purchases/${purchaseId}/returns`,
+          {
+            id: crypto.randomUUID(),
+            date: today,
+            reason: "Wrong finish",
+            lines: [{ productId: p.id, qty: 2 }],
+            refundMethod: null,
+            refundReference: "",
+          },
+          "POST",
+        )
+      ).status,
+    ).toBe(201);
+    expect(await stockNow()).toBe(16);
+    // Five counters bill 4 each at the same moment: 16 posted, never negative.
+    const results = await Promise.all(
+      [1, 2, 3, 4, 5].map((seq) =>
+        request("/pos/invoices", sale(seq, 4), "POST"),
+      ),
+    );
+    expect(results.map((r) => r.status)).toEqual([201, 201, 201, 201, 201]);
+    expect(await stockNow()).toBe(0);
+    const unposted = await bindings.DB.prepare(
+      "SELECT SUM(l.unposted_qty) AS n FROM invoice_lines l JOIN invoices i ON i.id=l.invoice_id WHERE l.product_id=? AND i.shortfall=1",
+    )
+      .bind(p.id)
+      .first("n");
+    expect(unposted).toBe(4);
+    // A shelf count corrects it; the ledger still adds up exactly.
+    const { revision } = (await bindings.DB.prepare(
+      "SELECT revision FROM products WHERE id=?",
+    )
+      .bind(p.id)
+      .first()) as { revision: number };
+    expect(
+      (
+        await request(
+          "/admin/stock-count",
+          {
+            operationId: crypto.randomUUID(),
+            reason: "Shelf count",
+            lines: [{ productId: p.id, revision, counted: 3 }],
+          },
+          "POST",
+        )
+      ).status,
+    ).toBe(200);
+    expect(await stockNow()).toBe(3);
+    const ledger = (
+      await bindings.DB.prepare(
+        "SELECT delta,previous_stock,new_stock FROM stock_movements WHERE product_id=? ORDER BY rowid",
+      )
+        .bind(p.id)
+        .all<{ delta: number; previous_stock: number; new_stock: number }>()
+    ).results;
+    expect(ledger.reduce((n, m) => n + m.delta, 0)).toBe(3);
+    // Each movement starts where the previous one ended: no gaps or lost updates.
+    ledger.forEach((m, i) =>
+      expect(m.previous_stock).toBe(i ? ledger[i - 1].new_stock : 0),
+    );
+    // The counter's refresh sees the same figure.
+    const live = (await (await request("/pos/stock")).json()) as {
+      id: string;
+      stock: number;
+    }[];
+    expect(live.find((r) => r.id === p.id)?.stock).toBe(3);
+  });
 });
 
 describe("UPI and bank details", () => {
@@ -2607,6 +2985,7 @@ describe("role access matrix", () => {
     ["GET", "/pos/bootstrap?device=device-0001"],
     ["POST", "/pos/numbers"],
     ["GET", "/pos/customers"],
+    ["GET", "/pos/stock"],
     ["POST", "/pos/customers"],
     ["GET", "/pos/invoices"],
     ["POST", "/pos/invoices"],

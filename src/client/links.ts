@@ -14,9 +14,9 @@ export const withCountry = (phone: string) => {
 export const businessWhatsapp = (configured: string) =>
   configured || business.phone.replace(/\D/g, "");
 export const telLink = (phone: string) => `tel:${phone.replace(/[^\d+]/g, "")}`;
-export const mapsLink = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-  `${business.legalName}, ${business.address.street}, ${business.address.locality}, ${business.address.region}`,
-)}`;
+/** Directions straight to the showroom's coordinates. */
+export const mapsLink = `https://www.google.com/maps/dir/?api=1&destination=${business.geo.lat},${business.geo.lng}`;
+export const mapEmbed = `https://www.google.com/maps?q=${business.geo.lat},${business.geo.lng}&z=17&output=embed`;
 
 const demoImages: Record<string, string> = {
   "DEMO-BM01": "basin-mixer",

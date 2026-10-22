@@ -1,5 +1,81 @@
 # Handoff
 
+## Claude · 2026-10-22 · Website identity, navigation, Visit us, legal, SEO (wrap-up)
+
+- Hero rebuilt on Stone: brand line, spotlight of one product at a time + drifting filmstrip, 24 random photographed products per request (ADR 0011). Dark hero and photo wall removed.
+- Navigation: centred links, Collections panel (desktop), full-screen phone menu; no blue tap highlight; bronze focus ring for keyboard only.
+- Visit us: map at 11.649111, 75.729167 (owner), directions by coordinates, contact list, enquiry with intro. `business.geo`, LocalBusiness `geo`/`hasMap`.
+- Legal: `/privacy`, `/terms` (AI image notice only there, per owner), footer links, sitemap, breadcrumbs. SEO: collection lastmod in sitemap, brand-led home description.
+- Speed: page ~12 KB HTML, 85 KB JS, 12 KB CSS, images lazy. Slow first bytes were this laptop's route to workers.dev (static files equally slow; cloudflare.com fast); the custom domain + edge cache will be faster.
+- Checks: 81 API + 10 browser tests, axe on every public page (desktop/phone), live check. Deployed (a64174b1).
+- **Next:** owner to give opening hours, have legal text reviewed, set Featured products, confirm price mismatches on 5 posters, point Hostinger nameservers to Cloudflare (then Stage 2 in DEPLOYMENT.md). Refresh DESIGN.md. Nothing committed yet.
+
+## Claude · 2026-10-22 · Public pages audit and cart polish
+
+- Audited every public page (home, collections, collection, product, about, visit us, 404) on desktop and phone with axe; sales catalogue left out at the owner's request.
+- Fixed: About overflow on phones, the duplicate logo showcase removed from About (owner), section kickers removed, collections grid spacing, scroll fade on the collection chip row, product page actions (cart full width, WhatsApp + call below), footer pinned on short pages.
+- Cart: "Added to cart" toast with View cart, phone bottom bar shows Cart · n once items are in, name/phone/place remembered on the device, compact steppers.
+- Hero: owner still not satisfied; direction being agreed (options: showcase spotlight, full-bleed dark banner, category strip).
+- Checks: 80 API + 10 browser tests; deployed.
+
+## Claude · 2026-10-22 · Landing page, warranty, link previews, website cart
+
+- Remaining 5 posters uploaded at the owner's request (printed MRP still differs from the app for CP 109, FU 103, SH 102A, SH 103 A, SL 104; app prices unchanged).
+- Hero: placeholder tap replaced by a 3-tile mosaic of real photographed products (featured first, else one per biggest range; `hero` in the home payload). Section kickers removed on the home page.
+- Warranty: to-scale SVG bar chart on a 0–10 year axis (SVG widths because the CSP blocks inline styles), scroll-driven grow, reduced-motion safe.
+- Link previews: new `public/images/og-lenore.jpg` from real photos (`node scripts/make-og.mjs big small1 small2`), og:image size/type/alt, Twitter tags, product image alt.
+- Website cart (`src/client/site/cart.ts`, `cart-panel.tsx`): browser-stored cart, Add to cart on cards and product pages, header cart button, panel with quote/order choice; sends an itemised WhatsApp message and saves the request (with catalogue names/MRP, website products only) to Enquiries via `/api/enquiries` (`kind`, `items`).
+- Checks: 80 API + 10 browser tests (cart flow with axe), typecheck, lint, live check on workers.dev. Deployed.
+- Note: DESIGN.md is stale (describes Marcellus/older palette; the site is Manrope + ink/stone/bronze). Not refreshed.
+
+## Claude · 2026-10-22 · Second image batch
+
+- Uploaded 90 photos + 28 posters (same WebP pipeline, only empty slots). Live now: 269/308 photos, 53 posters. All earlier `pending` review flags are resolved (FTR 6351 source-limited exception, KRS 601 false positive).
+- **Posters held for price mismatch (poster vs app MRP):** CP 109 (₹1580 vs ₹1698), FU 103 (₹1090 vs ₹1196), SH 102A (₹898 vs ₹936), SH 103 A (₹550 vs ₹660), SL 104 (₹1580 vs ₹1896). HF 118 poster prints "796/-" without ₹ (uploaded).
+- 39 products still have no photo (folder has no file for them yet).
+
+## Claude · 2026-10-22 · Stock audit and database efficiency
+
+- Stock audit: sales, returns (restock or not), purchases (moving-average cost), supplier returns, manual adjustments, imports and stock counts all post through guarded `stock_movements`; duplicates and over-returns are refused. New API test runs a full lifecycle on one product, including five simultaneous bills, and checks stock = ledger with an unbroken chain.
+- Fixed: the billing counter showed stock from when it opened. It now refreshes after each bill/return and every 20 s (`GET /api/pos/stock`), net of offline bills. Browser test added.
+- DB efficiency (ADR 0010): production D1 insights showed the catalogue poll reading every product; migration 0014 adds a one-row catalogue version. Website photos are edge-cached. Other hot queries already use indexes (1–3 rows read); no queries run inside loops.
+- Checks: 79 API + 9 browser tests, typecheck, lint. Migration 0014 applied in production; deployed.
+
+## Codex · 2026-10-22 · Lenore image export in progress
+
+- User scope: Downloads folder first, app replacement later; logo also on square product photos. All 352 local sources (289 photo slots, 63 poster slots; 308 records) copied and OCR archived under `~/Downloads/Lenore-Product-Visuals`; `catalogue-manifest.json`, `product-information.json`, per-image prompts and progress accompany outputs.
+- Three disjoint conversion queues run in parallel after explicit user approval; output count is in `PROGRESS.txt`. Current metadata writes use a lock. Review reports track corrected codes, prices, old brand engraving, props and exact drain-slot counts. FTR 6351 retains the source towel because hidden construction cannot be verified; KRS 601 five slots are correct. SH 108A shared-advert variant mismatch is being corrected by the audit worker.
+- This Codex export makes no app/database/production changes. Claude's separate image deployment is recorded below. Source printed prices take priority in artwork; catalogue conflicts must be reconciled separately before uploads. Full final integrity/hash/coverage audit remains pending.
+
+## Claude · 2026-10-22 · Product images uploaded to production
+
+- From `~/Downloads/Lenore-Product-Visuals` (217 of 352 images done): converted to WebP (photos 1600 px, posters 2400 px, q85) plus `<key>.600` thumbnails, put in R2 `lenore-production-media`, linked only where the slot was empty. **179 photos + 25 posters** live; keys verified per product, no mismatches. File names mapped to codes through the folder's `catalogue-manifest.json` (e.g. `CO109-1` → `CO109 1"`, `KB-1101-AS-109` → `KB 1101 (AS 109)`).
+- **Held back (13):** 11 flagged `pending` in `review-flags.json` (photos FTR 6351, FTR 6352, KD 702, KRS 601, OP 05A, OP 05B; posters AR 109, CT 108B, HF 118, KF 902A, KF 902B) and 2 posters whose printed MRP differs from the app: CP 109 (poster ₹1580, app ₹1698), FU 103 (poster ₹1090, app ₹1196). OP 01S poster prints the code as "OP 1S" (uploaded).
+- For the next batch: same steps; only upload files whose product slot is still empty, re-check printed MRPs on posters.
+
+## Claude · 2026-10-22 · Salespeople are external
+
+- Owner: salespeople are not company staff; they only browse the catalogue and prepare quotations. They now get stock status only (In stock / Limited stock / Out of stock), never counts or shelf locations; exact stock goes to owner, admins and cashiers (`viewer.posAccess`). Shared-password visitors also get status only. They cannot search or link saved customers (ADR 0009).
+- Product sheet Share now sends the photo (or the spec sheet on screen) as a JPEG with name, code, MRP and description; WebP would arrive in WhatsApp as a sticker. Desktop without a share sheet: saves the picture and copies the text.
+- App icons redrawn (catalogue on Stone, Admin on Slate, Billing on Bronze; the symbol sits in the mark's top-right space; larger maskable art). Regenerate with `node scripts/make-icons.mjs`. Service worker cache bumped to v4 so installed apps refresh.
+- Camera scanner (continuous: counter and stock count): a code held in view counts once and must leave the camera for 1 s to count again (was every 1.5 s); green/red frame flash, readable result bar, running count, "move it away" hint. Browser test with a fake camera.
+- Checks: 77 API + 8 browser tests, typecheck, lint. Deployed.
+
+## Claude · 2026-10-22 · Price lists on quotations
+
+- Price lists were used only at the billing counter. Now owner/admin quotations can link a saved customer (salespeople cannot, owner's choice): untouched lines take the customer's list price (server-enforced), and the counter loads the quotation with that customer (ADR 0009, migration 0013, `/api/quotation-customers`).
+- Tests: new API test (quotation list prices, below-list refused in MRP mode, unknown customer refused, counter gets the customer, cashier floor at list price) and a browser test with axe. 77 API + 7 browser tests pass (one earlier run had a one-off failure in the visitor quotation test; it passed alone and in two full runs).
+- Deployed to production (migration 0013 applied remotely). Owner secrets are both set now.
+
+## Claude · 2026-10-22 · Cloudflare deploy preparation
+
+- `env.production` now serves on workers.dev (`workers_dev: true`, custom-domain routes commented) until lenoretrading.com is active in Cloudflare (nameservers at Hostinger pending).
+- `scripts/export-products.mjs` writes `dist/products-import.sql`: 308 products, no photos/posters, opening stock from the import (local test bills excluded). Verified on a fresh migrated local DB: 308 products, 294 opening movements, 0 images.
+- `docs/DEPLOYMENT.md` rewritten as Stage 1 (workers.dev) / Stage 2 (domain).
+- Checks: typecheck, lint, 76 API tests, build dry run, production dry run.
+- **Deployed (Stage 1)** to account lenorebathfittings@gmail.com: D1 `lenore-production` (f094ba61…, APAC, 12 migrations), R2 `lenore-production-media`, Worker at https://lenore-platform.lenore-platform.workers.dev (cron on). 308 products imported (no images, all hidden from the public website). All pages return 200; bad login returns 401.
+- **Waiting on owner:** `ADMIN_PASSWORD_HASH` secret (agents are blocked from writing secrets), Workers Paid plan, photos, nameservers at Hostinger → then Stage 2 in DEPLOYMENT.md.
+
 ## Claude · 2026-10-22 · Business report, landing and scroll fixes
 
 - **Business report (PDF):** Reports & GST → Business report. Month / quarter / financial year / custom; 11 sections (glance, sales, what sold, money, profit, GST, stock, quotations, checks, actions, notes + glossary + sign-off). Saved to an append-only archive (migration 0012, ADR 0008). Verified on real local data: 15 pages, ~110 KB, under 2 s.

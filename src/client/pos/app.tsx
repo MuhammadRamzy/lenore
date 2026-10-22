@@ -327,7 +327,45 @@ function Counter({
   boot: Bootstrap;
   reload: () => Promise<void>;
 }) {
-  const products = boot.products;
+  // Live stock: the server's figures minus bills still waiting to sync.
+  const [liveStock, setLiveStock] = useState<Record<string, number> | null>(
+    null,
+  );
+  const products = useMemo(
+    () =>
+      liveStock
+        ? boot.products.map((p) =>
+            p.id in liveStock ? { ...p, stock: liveStock[p.id] } : p,
+          )
+        : boot.products,
+    [boot.products, liveStock],
+  );
+  const deduct = useCallback(
+    (lines: { productId: string; qty: number }[]) =>
+      setLiveStock((s) => {
+        const next = {
+          ...(s ??
+            Object.fromEntries(boot.products.map((p) => [p.id, p.stock]))),
+        };
+        for (const l of lines)
+          next[l.productId] = Math.max(0, (next[l.productId] ?? 0) - l.qty);
+        return next;
+      }),
+    [boot.products],
+  );
+  const refreshStock = useCallback(async () => {
+    try {
+      const rows = await api<{ id: string; stock: number }[]>("/pos/stock");
+      const next = Object.fromEntries(rows.map((r) => [r.id, r.stock]));
+      for (const q of readQueue())
+        for (const l of q.payload.lines)
+          if (l.productId in next)
+            next[l.productId] = Math.max(0, next[l.productId] - l.qty);
+      setLiveStock(next);
+    } catch {
+      // Offline: keep the figures we have.
+    }
+  }, []);
   const thumb = (p: PosProduct, size: number) => {
     const img = productImage(
       { ...p, posterUrl: p.posterUrl ?? null },
@@ -440,13 +478,16 @@ function Counter({
     const down = () => setOnline(false);
     window.addEventListener("online", up);
     window.addEventListener("offline", down);
-    const timer = setInterval(() => void sync(), 20000);
+    const timer = setInterval(
+      () => void sync().then(() => refreshStock()),
+      20000,
+    );
     return () => {
       window.removeEventListener("online", up);
       window.removeEventListener("offline", down);
       clearInterval(timer);
     };
-  }, [sync]);
+  }, [sync, refreshStock]);
 
   const listPrice = useCallback(
     (p: PosProduct, c: Customer | null) => {
@@ -636,6 +677,7 @@ function Counter({
       );
       setDone({ invoice: r.invoice, pending: false });
       void autoPrint(r.invoice);
+      void refreshStock();
       api<ShiftSummary>(`/pos/shifts/${shift.id}`)
         .then(setShift)
         .catch(() => undefined);
@@ -645,6 +687,7 @@ function Counter({
       const offline = { ...payload, offline: true };
       writeQueue([...readQueue(), { payload: offline, number: printed }]);
       setQueued(readQueue().length);
+      deduct(offline.lines);
       const local = localInvoice(offline, printed);
       setDone({ invoice: local, pending: true });
       void autoPrint(local);
@@ -1251,7 +1294,13 @@ function Counter({
           }}
           onLoad={(q) => {
             setQuotation({ id: q.id, number: q.number });
-            setWalkIn({ name: q.customerName, phone: q.customerPhone });
+            // A quotation for a saved customer bills to that customer; prices stay as quoted.
+            setCustomer(q.customer);
+            setWalkIn(
+              q.customer
+                ? { name: "", phone: "" }
+                : { name: q.customerName, phone: q.customerPhone },
+            );
             const missing: string[] = [];
             const next: Line[] = [];
             for (const i of q.items) {
@@ -1401,7 +1450,11 @@ function Counter({
             search.current?.focus();
           }}
           onPrint={print}
-          onChange={(invoice) => setDone({ invoice, pending: false })}
+          onChange={(invoice) => {
+            setDone({ invoice, pending: false });
+            // Returns can put items back on the shelf.
+            void refreshStock();
+          }}
           shiftId={shift.id}
           notify={setToast}
         />
@@ -1843,6 +1896,7 @@ type QuoteItems = {
   status: string;
   customerName: string;
   customerPhone: string;
+  customer: Customer | null;
   items: {
     productId: string;
     code: string;

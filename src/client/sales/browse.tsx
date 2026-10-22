@@ -383,8 +383,7 @@ export function Browse({
       )}
       {level === "public" && (
         <p className="fine-print">
-          Showing suggested MRP and stock status. Sign in as a salesperson to
-          see exact stock.
+          Showing suggested MRP and stock status. Sign in to prepare quotations.
         </p>
       )}
     </section>
@@ -412,6 +411,7 @@ export function ProductSheet({
     product.imageUrl || !product.posterUrl ? "photo" : "poster",
   );
   const [qty, setQty] = useState(quantity || 1);
+  const [sharing, setSharing] = useState(false);
   const link = publicSite ? `${location.origin}/products/${product.slug}` : "";
   const text = [
     `*${product.name}*`,
@@ -423,6 +423,39 @@ export function ProductSheet({
   ]
     .filter(Boolean)
     .join("\n");
+  /** Shares the picture on screen (photo or specification sheet) with the details. */
+  async function share() {
+    setSharing(true);
+    try {
+      const src =
+        view === "poster" && product.posterUrl
+          ? product.posterUrl
+          : product.imageUrl;
+      const file = src ? await jpegFile(src, product.code) : null;
+      if (file && navigator.canShare?.({ files: [file] }))
+        await navigator.share({ files: [file], title: product.name, text });
+      else if (typeof navigator.share === "function")
+        await navigator.share({ title: product.name, text });
+      else {
+        // Desktop browsers without a share sheet: save the picture, copy the details.
+        if (file) {
+          const url = URL.createObjectURL(file);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = file.name;
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 10000);
+        }
+        await navigator.clipboard.writeText(text);
+        notify(file ? "Picture saved and details copied" : "Details copied");
+      }
+    } catch (e) {
+      if ((e as DOMException)?.name !== "AbortError")
+        notify("Could not share. Try WhatsApp instead.");
+    } finally {
+      setSharing(false);
+    }
+  }
   return (
     <Sheet title={product.name} onClose={onClose} wide>
       <div className="product-sheet">
@@ -490,19 +523,15 @@ export function ProductSheet({
             >
               <MessageCircle size={16} aria-hidden="true" /> WhatsApp
             </a>
-            {typeof navigator !== "undefined" && "share" in navigator && (
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() =>
-                  navigator
-                    .share({ title: product.name, text })
-                    .catch(() => undefined)
-                }
-              >
-                <Share2 size={16} aria-hidden="true" /> Share
-              </button>
-            )}
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={sharing}
+              onClick={() => void share()}
+            >
+              <Share2 size={16} aria-hidden="true" />{" "}
+              {sharing ? "Preparing…" : "Share"}
+            </button>
           </div>
         </div>
       </div>
@@ -538,4 +567,23 @@ export function ProductSheet({
       </div>
     </Sheet>
   );
+}
+
+/** Photos are stored as WebP, which WhatsApp turns into a sticker; share a JPEG instead. */
+async function jpegFile(url: string, name: string) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("Image unavailable");
+  const bitmap = await createImageBitmap(await response.blob());
+  const canvas = document.createElement("canvas");
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bitmap, 0, 0);
+  const blob = await new Promise<Blob | null>((done) =>
+    canvas.toBlob(done, "image/jpeg", 0.9),
+  );
+  if (!blob) throw new Error("Image conversion failed");
+  return new File([blob], `Lenore-${name}.jpg`, { type: "image/jpeg" });
 }

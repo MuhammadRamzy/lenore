@@ -28,12 +28,15 @@
   "env": {
     "production": {
       "name": "lenore-platform",
-      "workers_dev": false,
+      // Until lenoretrading.com is active in this Cloudflare account, the app is
+      // served on its workers.dev address. When the domain is active: set
+      // workers_dev to false, uncomment routes, deploy (docs/DEPLOYMENT.md).
+      "workers_dev": true,
       "preview_urls": false,
-      "routes": [
-        { "pattern": "www.lenoretrading.com", "custom_domain": true },
-        { "pattern": "lenoretrading.com", "custom_domain": true },
-      ],
+      // "routes": [
+      //   { "pattern": "www.lenoretrading.com", "custom_domain": true },
+      //   { "pattern": "lenoretrading.com", "custom_domain": true },
+      // ],
       "placement": { "mode": "smart" },
       // 03:15 UTC daily: remove expired sessions and rate-limit rows.
       "triggers": { "crons": ["15 3 * * *"] },
@@ -42,12 +45,11 @@
         "DEMO_MODE": "false",
         "SITE_ORIGIN": "https://www.lenoretrading.com",
       },
-      // Replace with the ID printed by `wrangler d1 create lenore-production`.
       "d1_databases": [
         {
           "binding": "DB",
           "database_name": "lenore-production",
-          "database_id": "00000000-0000-0000-0000-000000000000",
+          "database_id": "f094ba61-684d-47fa-b81f-7b892ad7ca0a",
           "migrations_dir": "migrations",
         },
       ],

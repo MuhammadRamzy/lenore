@@ -229,6 +229,8 @@ export const quotationInput = z
     notes: z.string().trim().max(2000),
     validUntil: isoDay,
     preparedBy: z.string().trim().max(120).default(""),
+    /** A saved customer (staff only); their price list sets untouched lines. */
+    customerId: z.uuid().nullable().default(null),
     items: z
       .array(
         z
@@ -274,6 +276,7 @@ export type Quotation = {
   createdBy: string | null;
   createdByName: string;
   createdByPhone: string;
+  customerId: string | null;
   customerName: string;
   customerPhone: string;
   customerPlace: string;
@@ -290,9 +293,29 @@ export type Quotation = {
   createdAt: string;
   updatedAt: string;
 };
+/** Saved customers for the quotation form, with their price list when one is set. */
+export type QuoteCustomer = {
+  id: string;
+  name: string;
+  phone: string;
+  address: string;
+  priceList: {
+    name: string;
+    discountBp: number;
+    prices: Record<string, number>;
+  } | null;
+};
 /** Unit price after a basis-point discount, rounded half up to the paisa. */
 export const discounted = (mrp: number, bp: number) =>
   Math.floor((mrp * (10000 - bp) + 5000) / 10000);
+/** A customer's price-list price: its own price for the product, else the list discount off MRP. */
+export const listPriceOf = (
+  list: NonNullable<QuoteCustomer["priceList"]>,
+  productId: string,
+  mrp: number | null,
+) =>
+  list.prices[productId] ??
+  (mrp === null ? null : discounted(mrp, list.discountBp));
 export const percent = (bp: number) =>
   `${(bp / 100).toLocaleString("en-IN", { maximumFractionDigits: 2 })}%`;
 export type QuoteItem = {

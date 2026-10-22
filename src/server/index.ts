@@ -17,6 +17,8 @@ import quotations, { readSettings } from "./quotations";
 import team from "./team";
 import insights from "./insights";
 import seo, { notFound } from "./seo";
+import { ON_WEBSITE } from "./website";
+import type { QuoteItem } from "../shared";
 import erp from "./erp";
 import report from "./report";
 
@@ -142,6 +144,19 @@ app.post("/api/enquiries", async (c) => {
         ),
       message: z.string().trim().max(2000),
       interest: z.string().trim().max(120),
+      /** Website cart: what the visitor wants quoted or ordered. */
+      kind: z.enum(["enquiry", "quote", "order"]).default("enquiry"),
+      items: z
+        .array(
+          z
+            .object({
+              productId: z.uuid(),
+              quantity: z.number().int().min(1).max(9999),
+            })
+            .strict(),
+        )
+        .max(100)
+        .default([]),
     })
     .strict()
     .parse(await c.req.json());
@@ -154,13 +169,54 @@ app.post("/api/enquiries", async (c) => {
       { error: "Too many enquiries. Please try again in 10 minutes." },
       429,
     );
-  const notes = [d.interest && `Interested in: ${d.interest}`, d.message]
+  // Names and MRP come from the catalogue, never from the visitor; only products on the website count.
+  const ids = d.items.map((i) => i.productId);
+  const rows = ids.length
+    ? (
+        await c.env.DB.prepare(
+          `SELECT id,code,name,price_paise FROM products WHERE ${ON_WEBSITE} AND id IN (${ids.map(() => "?").join(",")})`,
+        )
+          .bind(...ids)
+          .all<{
+            id: string;
+            code: string;
+            name: string;
+            price_paise: number | null;
+          }>()
+      ).results
+    : [];
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const items: QuoteItem[] = d.items.flatMap((i) => {
+    const p = byId.get(i.productId);
+    return p
+      ? [
+          {
+            productId: p.id,
+            code: p.code,
+            name: p.name,
+            quantity: i.quantity,
+            pricePaise: p.price_paise,
+          },
+        ]
+      : [];
+  });
+  if (d.items.length && !items.length)
+    return c.json(
+      { error: "These products are no longer available. Refresh the page." },
+      409,
+    );
+  const notes = [
+    d.kind === "order" && "Order request from the website cart",
+    d.kind === "quote" && "Quotation request from the website cart",
+    d.interest && `Interested in: ${d.interest}`,
+    d.message,
+  ]
     .filter(Boolean)
     .join("\n");
   await c.env.DB.prepare(
-    "INSERT INTO quotes(id,request_hash,name,phone,notes,items_json) VALUES(?,?,?,?,?,'[]') ON CONFLICT(id) DO NOTHING",
+    "INSERT INTO quotes(id,request_hash,name,phone,notes,items_json) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
   )
-    .bind(d.id, "enquiry", d.name, d.phone, notes)
+    .bind(d.id, d.kind, d.name, d.phone, notes, JSON.stringify(items))
     .run();
   return c.json({ id: d.id }, 201);
 });

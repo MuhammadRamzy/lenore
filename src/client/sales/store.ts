@@ -5,6 +5,7 @@ import type {
   CatalogueProduct,
   PricingMode,
   Quotation,
+  QuoteCustomer,
   SessionInfo,
 } from "../../shared";
 import { api } from "../api";
@@ -36,6 +37,8 @@ export type Draft = {
   notes: string;
   validUntil: string;
   lines: DraftLine[];
+  /** A saved customer; their price list sets the price of untouched lines. Absent in older drafts. */
+  customer?: QuoteCustomer | null;
   /** Set when revising a saved quotation. */
   editing: { id: string; number: string; revision: number } | null;
 };
@@ -77,6 +80,7 @@ export const newDraft = (validityDays: number): Draft => ({
   notes: "",
   validUntil: indiaDate(validityDays),
   lines: [],
+  customer: null,
   editing: null,
 });
 
