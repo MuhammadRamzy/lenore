@@ -32,6 +32,12 @@ def decide():
     for r in plan:
         if "action" in done.get(r["tag"], {}):
             a = done[r["tag"]]["action"]
+        elif r.get("proven_by_previous_sync"):
+            a = "already-current"
+            log({"tag": r["tag"], "code": r["code"], "slot": r["slot"], "product_id": r["product_id"],
+                 "source_sha256": r["source_sha256"], "encoded_sha256": r["encoded_sha256"],
+                 "thumb_sha256": r["thumb_sha256"], "old_key": r["old_key"], "action": a,
+                 "evidence": "same immutable key as verified sync 2026-10-23 and identical encoding"})
         elif not r["old_key"]:
             a = "add"
             m = t = None
@@ -89,7 +95,7 @@ def link():
         assert e.get("uploaded"), r["tag"]
         col = "image_key" if r["slot"] == "photo" else "poster_key"
         guard = f"{col} IS NULL" if r["old_key"] is None else f"{col}={q(r['old_key'])}"
-        lines.append(f"UPDATE products SET {col}={q(e['new_key'])},revision=revision+1,last_actor='image sync 2026-10-23',"
+        lines.append(f"UPDATE products SET {col}={q(e['new_key'])},revision=revision+1,last_actor='image sync 2026-10-23b',"
                      f"updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id={q(r['product_id'])} AND {guard};")
     open(S + "link.sql", "w").write("\n".join(lines) + "\n")
     print(len(lines), "link statements")

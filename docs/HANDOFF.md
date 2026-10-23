@@ -1,5 +1,22 @@
 # Handoff
 
+## Claude · 2026-10-23 · Media re-sync: SH 102 / SH 102A posters, collection covers
+
+- Export ready (21:40, inventory SHA256 d25cf9e0… matches `UPLOAD-READINESS.json`); no pending flags; poster audit (21:20) has no open issues. All 359 masters matched their hashes and exact app codes.
+- Products: **357 already current** (still linked to the keys verified in the earlier sync and identical encoding), **2 replaced** (SH 102 poster, SH 102A poster: now the 8×8 = 64-nozzle product), **0 added, 0 failed**. Only `poster_key`/`revision` changed on those two products; business data unchanged.
+- Verified all 359 slots again: fresh R2 download of every linked main + `.600` (718 objects) matched, and all 359 main and `?w=600` URLs matched anonymously. Visual sample (SH 102, SH 102A, SH 103 C, RSD 05, Showers, Collections; desktop/phone): no broken images; app prices kept (SH 102A ₹936 vs poster ₹898).
+- Collection covers: all 30 `complete-and-visually-reviewed`, source hashes unchanged since the seed, live bytes identical to today's encoding: **30 already current, none uploaded**. No cover key is used by a product slot.
+- Logs: `docs/media-sync/2026-10-23b-sync-log.jsonl`, `docs/media-sync/2026-10-23b-collection-covers.jsonl`; backups of the two replaced posters + pre-sync maps in `~/lenore-media-backups/2026-10-23b/` (old objects also kept in R2). Still no source media for the same 12 products. No code change or deploy.
+
+## Codex · 2026-10-23 · Final catalogue, Instagram, social and Google Ads export
+
+- Downloads export complete: `~/Downloads/Lenore-Product-Visuals`. Catalogue has359masters (296square photos,63posters,including7poster-derived RSD photos). All359decode/aspect/Downloads-hash checks and359category-copy hashes pass.63poster text reviews plus source/visual adjudications are archived. Twelve records have no source media; no products invented.
+- Final source recount corrected SH102 andSH102A poster heroes to the actual8×8=64nozzles. Direct visual review and read-only OpenCV circle/grid checks confirm both; code/source price/warranty/540gm forA retained. Prior7×7/9×9 adjudications were wrong and are superseded. Reports:`sh102-final-correction-report.json`,`sh102a-final-correction-report.json`,`sh102-nozzle-count-checks.json`.
+- All30Instagram category covers complete, including4creative refreshes, typography-only Wallmixer fix and exactPillar cock case. Independent cover text review and current hashes pass.30CAPTION.txt files include `https://lenoretrading.com`; category orders and copies are current.
+- Additional completed packs:5native official-vector profile designs (1080PNG/SVG,2160masters,circle proof);4social banner/story designs (PNG/SVG); general Lenore GoogleAds campaign with12text-free actual-product images (5landscape,5square,2portrait),2official logo exports,and15short/5long/5description draft text assets. Image ratios/minimum dimensions/≤5120KB,text lengths,no-overlay review and final hash stamps pass. Built-in image_gen used for raster product/cover/ad edits; profile/banner/logo assets preserve official vector paths. No ad upload or launch.
+- `UPLOAD-READINESS.json` ready=true; final359-entry inventory and38-entry changed-since-yesterday list saved. Claude’s earlier359-asset app sync is now logged above/below. Local comparison against that log identifies **two later changed posters:SH102 andSH102A** (`changed-since-last-app-sync.json`); recheck live state, replace with new immutable keys/thumbnails, and verify app collection covers match the final30cover versions. Updated `CLAUDE-UPLOAD-PROMPT.md` covers both. Preserve all business data/visibility; social andads files are not product media.
+- This export changed only local assets and documentation; Claude’s independent production work is preserved in its entries. Next:Claude to apply that final media refresh. `CURRENT-STATUS.md`, `EXPORT-STATUS.json`, READMEs,prompts and audit reports in Downloads provide restart context. No export generation remains pending.
+
 ## Claude · 2026-10-23 · Collection covers, managed in the admin
 
 - Migration 0015: `website_categories.cover_key`. Admin: Workspace → Website → Collections has a Cover column (preview, Upload/Replace, Remove; browser converts to WebP, 1000 px). API: `PUT/DELETE /api/admin/website/categories/cover?name=` (admin only; new immutable key per upload; old object deleted on replace/remove, like product media). `/api/media/:key` serves covers publicly unless the collection is hidden (same 7-day edge-cache caveat as product photos).
@@ -16,14 +33,6 @@
 - Log: `docs/media-sync/2026-10-23-sync-log.jsonl` (per code/slot: source/encoded/thumb hashes, old/new/final key, checks). Backups of the 4 replaced renditions + pre-sync media map: `~/lenore-media-backups/2026-10-23/` (old objects also remain in R2).
 - Not uploaded (no source media, slots left empty): AS 120A, AS 123 A, AS 123 B, CS 120, FU 101H, FU 101P, HF 109B, HG 2021, HG 2022, HG 2023, HS 106, SH 111.
 - Poster prices follow printed artwork and still differ from app prices (CP 109, FU 103, SH 102A, SH 103 A, SL 104); app prices untouched. No code changes, no deploy.
-
-## Codex · 2026-10-23 · Product export complete; Claude upload handoff
-
-- Built-in generation is working again. All359 product outputs now saved in `~/Downloads/Lenore-Product-Visuals` (296 square photos,63 posters, including7poster-derived RSD photos). Initial integrity/aspect/hash audit passes all359.
-- Root corrections saved for SC106 old engraving, SH108A duplicate views/actual square model and size, SH103A actual small head/arm and suffix code. SH103C/D/E poster geometry corrections complete.63poster OCR/text audit plus visual adjudications passed; no unresolved product issue. Instagram covers running separately; owner requests more creative, varied editorial layouts. All30category captions include `https://lenoretrading.com`.
-- Prepared `CLAUDE-UPLOAD-PROMPT.md`,359-entry `upload-asset-inventory.json`,36-entry `changed-since-2026-10-22.json` and explicit `UPLOAD-READINESS.json` (ready=true). Claude must reconcile all media, replace stale occupied slots using fresh immutable URLs and refreshed thumbnails, preserve business data and existing visibility. User will pass prompt to Claude; this task has made no app/database/deployment writes.
-- Scope added by owner:5profilepictures for Instagram/Facebook/WhatsApp business/groups;4socialbanner/story exports; GoogleAds general brand campaign selected explicitly (12clean productmarketing images:5landscape,5square,2portrait, plus2officiallogoexports and drafttextassets). Save new assets in separate Downloads subfolders; never include them in359app-uploadinventory.
-- All359 masters and category copies verified; final upload inventory regenerated after corrections. Owner received the Claude prompt. Instagram30covers complete, including4creative refreshes, typography-only Wallmixer correction and exactPillar cock case; independent cover text audit passes.5socialprofiles+2Googlelogoexports saved;4socialbanners/storyexports saved. Continue:finish12GoogleAds marketing images, audit newpack, finalize docs.12products lack all original media; preserve those app slots.
 
 ## Claude · 2026-10-22 · Stock count repeats, new products from purchases
 
