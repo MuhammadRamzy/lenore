@@ -1,5 +1,22 @@
 # Handoff
 
+## Claude · 2026-10-23 · Product media sync (359 assets)
+
+- Source: `~/Downloads/Lenore-Product-Visuals` (`UPLOAD-READINESS.json` ready=true, 19:49). All 359 masters (296 photos 1254×1254, 63 posters 1122×1402) matched `upload-asset-inventory.json` SHA256; every code matched the app exactly (no filename/fuzzy matching). Pending review flags: none (FTR 6351 source-limited exception, KRS 601 false positive; SH 108 A resolved in `root-final-corrections-report.json`).
+- Method: established pipeline (`docs/media-sync/encode.py`: shrink-only 1600/2400, WebP q85 + 600 px q80; deterministic, so byte equality proves currency). Direct R2 put + guarded D1 update (`docs/media-sync/sync.py`), because the authenticated endpoints need the owner password; endpoint rules respected (WebP, <5 MB, thumbnail <400 KB, new immutable keys, nothing deleted).
+- Result: **323 already current** (live main + thumbnail byte-identical to today's encoding), **32 added**, **4 replaced** (SC 106 photo, SH 108 A photo + poster, SH 103 A poster), **0 failed**. App now has 296 photos + 63 posters. SH 103 B–E photos and posters were empty and are now added.
+- Verified: all 359 linked keys re-downloaded from R2 and matched; all 359 main and `?w=600` URLs fetched anonymously and matched (all products are currently on the website, so no hidden-product case existed). Only `image_key`/`poster_key`/`revision`/`updated_at`/`last_actor` changed, on 31 products; prices, stock, tax, categories, visibility and featured flags unchanged. Visual sample of showers, RSD, SC 106 and collections on desktop/phone: no broken images.
+- Log: `docs/media-sync/2026-10-23-sync-log.jsonl` (per code/slot: source/encoded/thumb hashes, old/new/final key, checks). Backups of the 4 replaced renditions + pre-sync media map: `~/lenore-media-backups/2026-10-23/` (old objects also remain in R2).
+- Not uploaded (no source media, slots left empty): AS 120A, AS 123 A, AS 123 B, CS 120, FU 101H, FU 101P, HF 109B, HG 2021, HG 2022, HG 2023, HS 106, SH 111.
+- Poster prices follow printed artwork and still differ from app prices (CP 109, FU 103, SH 102A, SH 103 A, SL 104); app prices untouched. No code changes, no deploy.
+
+## Codex · 2026-10-23 · Product export complete; Claude upload handoff
+
+- Built-in generation is working again. All359 product outputs now saved in `~/Downloads/Lenore-Product-Visuals` (296 square photos,63 posters, including7poster-derived RSD photos). Initial integrity/aspect/hash audit passes all359.
+- Root corrections saved for SC106 old engraving, SH108A duplicate views/actual square model and size, SH103A actual small head/arm and suffix code. SH103C/D/E poster geometry corrections complete.63poster OCR/text audit plus visual adjudications passed; no unresolved product issue. Instagram covers running separately; owner requests more creative, varied editorial layouts. All30category captions include `https://lenoretrading.com`.
+- Prepared `CLAUDE-UPLOAD-PROMPT.md`,359-entry `upload-asset-inventory.json`,36-entry `changed-since-2026-10-22.json` and explicit `UPLOAD-READINESS.json` (ready=true). Claude must reconcile all media, replace stale occupied slots using fresh immutable URLs and refreshed thumbnails, preserve business data and existing visibility. User will pass prompt to Claude; this task has made no app/database/deployment writes.
+- All359 masters and category copies verified; final upload inventory regenerated after corrections. Owner received the Claude prompt. Continue:finish Instagram covers/creative refreshes, update cover queue/index/audits and final docs.12products lack all original media; preserve those app slots.
+
 ## Claude · 2026-10-22 · Stock count repeats, new products from purchases
 
 - Stock count: `repeatGuard` (src/client/scanner.tsx) ignores the same code re-read within 2.5 s (sliding), for camera and hand scanners; the camera also needs the code gone 1.5 s before re-reading. Ignored reads show a hint instead of a false success; "1 more" adds another of the last product.

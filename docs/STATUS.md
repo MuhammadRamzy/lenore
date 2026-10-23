@@ -1,6 +1,6 @@
 # Lenore status
 
-Updated 2026-10-22.
+Updated 2026-10-23.
 
 **Stage A — website, sales catalogue, quotations, inventory, admin: implemented and verified locally.**
 
@@ -20,10 +20,12 @@ Verification: typecheck, lint, 73 API tests (workerd), 6 browser tests on an iso
 
 **Production (Stage 1) — 2026-10-22.** Deployed to https://lenore-platform.lenore-platform.workers.dev with 308 products (no photos). Custom domain waits on Hostinger nameservers (docs/DEPLOYMENT.md Stage 2).
 
-Price lists now apply to quotations for saved customers (ADR 0009). Public website rebuilt around the brand: Stone hero with product spotlight, website cart with WhatsApp requests, new navigation, Visit us with map, privacy policy and terms (ADR 0011). 269 photos and 58 posters live.
+Price lists now apply to quotations for saved customers (ADR 0009). Public website rebuilt around the brand: Stone hero with product spotlight, website cart with WhatsApp requests, new navigation, Visit us with map, privacy policy and terms (ADR 0011). 296 photos and 63 posters live (media sync 2026-10-23, all 359 verified); 12 products have no source media.
 
 Not done: photos and thumbnail backfill, custom domain, Firebase billing migration (awaiting credentials via secrets), load test on staging. Nothing has been deployed.
 
-**Lenore image export — incomplete, service quota (Codex,2026-10-22).**327/359target outputs saved in `~/Downloads/Lenore-Product-Visuals`, all file/aspect/hash checks passed.32outputs plus4targeted corrections remain, including7new photos for poster-only products. Built-in image-generation daily quota reports reset23October2026,14:12:30IST. Resume instructions/queue and source/correction reports are in Downloads; no automatic continuation scheduled. This export made no app/deployment changes.
+**Lenore image export — complete (Codex,2026-10-23).**359/359 product outputs saved in `~/Downloads/Lenore-Product-Visuals`:296square photos and63posters, including7photos derived from poster-only products. All masters decode, have appropriate aspect ratios and match Downloads hashes. Root4image corrections and SH103C/D/E poster geometry corrections complete;63poster OCR/text audit and visual adjudications found no unresolved issue. Historical generation quota cleared.12catalogue records have neither original photo nor poster; no imagery invented for them. Source-price discrepancies remain documented.
 
-**Instagram export organisation (Codex,2026-10-22):**327saved images copied into30categoryfolders in Downloads; allhashesverified.30categorycoverthumbnails queuedfortomorrow, inadditiontoremainingproductimagework. Categorycarouselorders and restartnotes saved.
+**Claude media upload handoff:**`UPLOAD-READINESS.json` is ready=true; `CLAUDE-UPLOAD-PROMPT.md`,359-entry hash inventory and36-entry changed-since-yesterday list are in Downloads. Reconcile every product media slot and replace stale existing uploads using fresh immutable URLs and thumbnails; preserve all business fields and visibility. This export made no application/database/deployment changes. Owner received the prompt.
+
+**Instagram export:**359product images copied into30categoryfolders, all copy hashes verified. All30captions include `https://lenoretrading.com`.30additional category covers now saved; a few earlier covers are receiving creative layout refreshes before final report. Covers are excluded from app product uploads.
