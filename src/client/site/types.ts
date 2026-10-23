@@ -6,6 +6,8 @@ export type CategorySummary = {
   count: number;
   /** Optional admin-written introduction for the collection page. */
   intro: string;
+  /** Designed cover set by admins (Workspace -> Website); preferred over `cover`. */
+  coverUrl: string | null;
   /** Representative product, used for imagery. */
   cover: Pick<CatalogueProduct, "code" | "imageUrl" | "posterUrl"> | null;
 };

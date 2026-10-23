@@ -490,7 +490,7 @@ routes.post("/admin/stock-count", async (c) => {
   return c.json({ saved: true, replay: false, corrected: statements.length });
 });
 
-function imageType(bytes: Uint8Array) {
+export function imageType(bytes: Uint8Array) {
   const text = (a: number, b: number) =>
     new TextDecoder().decode(bytes.slice(a, b));
   if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff)
@@ -607,13 +607,22 @@ routes.get("/media/:key", async (c) => {
   )
     .bind(key, key)
     .first<{ published: number; on_site: number }>();
+  // Not a product image: it may be a collection cover, public unless the collection is hidden.
+  const cover = p
+    ? null
+    : await c.env.DB.prepare(
+        "SELECT hidden FROM website_categories WHERE cover_key=?",
+      )
+        .bind(key)
+        .first<{ hidden: number }>();
   const level = p?.published ? await catalogueLevel(c) : null;
   // Website photos are public; anything else needs catalogue or workspace access.
-  const allowed =
-    p &&
-    (p.on_site ||
-      (level && level !== "public") ||
-      (!p.published && isAdmin(c.get("viewer"))));
+  const allowed = cover
+    ? !cover.hidden || isAdmin(c.get("viewer"))
+    : p &&
+      (p.on_site ||
+        (level && level !== "public") ||
+        (!p.published && isAdmin(c.get("viewer"))));
   if (!allowed) return c.json({ error: "Image not found." }, 404);
   // ?w=600 serves the small grid version when one was uploaded.
   const object =
@@ -625,12 +634,12 @@ routes.get("/media/:key", async (c) => {
       "Content-Type":
         object.httpMetadata?.contentType ?? "application/octet-stream",
       // Keys are immutable: a replaced image gets a new key.
-      "Cache-Control": `${p.on_site ? "public" : "private"}, max-age=604800, immutable`,
+      "Cache-Control": `${p?.on_site || (cover && !cover.hidden) ? "public" : "private"}, max-age=604800, immutable`,
       "X-Content-Type-Options": "nosniff",
     },
   });
   // ponytail: a product hidden later keeps its cached photo reachable by its unguessable key for up to 7 days.
-  if (p.on_site)
+  if (p?.on_site || (cover && !cover.hidden))
     c.executionCtx.waitUntil(cache.put(c.req.raw, response.clone()));
   return response;
 });

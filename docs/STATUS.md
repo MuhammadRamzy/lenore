@@ -20,7 +20,7 @@ Verification: typecheck, lint, 73 API tests (workerd), 6 browser tests on an iso
 
 **Production (Stage 1) — 2026-10-22.** Deployed to https://lenore-platform.lenore-platform.workers.dev with 308 products (no photos). Custom domain waits on Hostinger nameservers (docs/DEPLOYMENT.md Stage 2).
 
-Price lists now apply to quotations for saved customers (ADR 0009). Public website rebuilt around the brand: Stone hero with product spotlight, website cart with WhatsApp requests, new navigation, Visit us with map, privacy policy and terms (ADR 0011). 296 photos and 63 posters live (media sync 2026-10-23, all 359 verified); 12 products have no source media.
+Price lists now apply to quotations for saved customers (ADR 0009). Public website rebuilt around the brand: Stone hero with product spotlight, website cart with WhatsApp requests, new navigation, Visit us with map, privacy policy and terms (ADR 0011). 296 photos and 63 posters live (media sync 2026-10-23, all 359 verified); 12 products have no source media. Collection covers are managed in Workspace → Website (30/30 set).
 
 Not done: photos and thumbnail backfill, custom domain, Firebase billing migration (awaiting credentials via secrets), load test on staging. Nothing has been deployed.
 
@@ -28,4 +28,6 @@ Not done: photos and thumbnail backfill, custom domain, Firebase billing migrati
 
 **Claude media upload handoff:**`UPLOAD-READINESS.json` is ready=true; `CLAUDE-UPLOAD-PROMPT.md`,359-entry hash inventory and36-entry changed-since-yesterday list are in Downloads. Reconcile every product media slot and replace stale existing uploads using fresh immutable URLs and thumbnails; preserve all business fields and visibility. This export made no application/database/deployment changes. Owner received the prompt.
 
-**Instagram export:**359product images copied into30categoryfolders, all copy hashes verified. All30captions include `https://lenoretrading.com`.30additional category covers now saved; a few earlier covers are receiving creative layout refreshes before final report. Covers are excluded from app product uploads.
+**Instagram export:**359product images copied into30categoryfolders, all copy hashes verified. All30captions include `https://lenoretrading.com`.30additional category covers complete, including4creative refreshes; image and independent text checks pass. Covers are excluded from app product uploads.
+
+**Social/advertising assets (Codex,2026-10-23):**5official-vector profile designs and4socialbanner/storyexports saved separately in Downloads. Owner selected a general Lenore GoogleAds brandcampaign first:12clean productmarketing images generating,2native officiallogoexports ready, draftheadlines/descriptions length-checked. No campaign uploaded/launched.

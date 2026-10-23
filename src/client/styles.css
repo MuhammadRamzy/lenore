@@ -3100,3 +3100,30 @@ body:has(.login-page) .demo-bar {
 .new-product .muted {
   margin: 0;
 }
+
+/* Website -> Collections: cover preview and actions. */
+.cover-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cover-cell img,
+.cover-empty {
+  flex: none;
+  width: 48px;
+  height: 60px;
+  border-radius: 3px;
+  object-fit: cover;
+  background: var(--sage, #e9eef4);
+}
+.cover-cell .button.small {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.cover-cell .text-button {
+  color: var(--danger, #9c3529);
+  font-size: 13px;
+  font-weight: 600;
+}

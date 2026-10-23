@@ -423,23 +423,45 @@ function CategoryGrid({
       {categories.map((c) => (
         <li key={c.slug}>
           <a href={`/collections/${c.slug}`} className="category-tile">
-            {c.cover ? (
-              <ProductImage
-                product={{ ...c.cover, name: c.name }}
-                demo={demo}
-                sizes="(max-width: 700px) 50vw, 20vw"
-              />
+            {/* The designed cover carries the name; others fall back to a product photo. */}
+            {c.coverUrl ? (
+              <span className="category-cover">
+                <img
+                  src={c.coverUrl!}
+                  alt=""
+                  width={600}
+                  height={750}
+                  loading="lazy"
+                  decoding="async"
+                />
+              </span>
+            ) : c.cover ? (
+              <span className="category-cover">
+                <ProductImage
+                  product={{ ...c.cover, name: c.name }}
+                  demo={demo}
+                  sizes="(max-width: 700px) 50vw, 20vw"
+                />
+              </span>
             ) : (
-              <div className="product-image empty">
-                <Mark />
-              </div>
+              <span className="category-cover">
+                <span className="product-image empty">
+                  <Mark />
+                </span>
+              </span>
             )}
-            <span className="category-name">
-              {c.name}
+            <span className="category-foot">
+              <span>
+                {c.coverUrl ? (
+                  <span className="visually-hidden">{c.name}: </span>
+                ) : (
+                  <strong>{c.name}</strong>
+                )}
+                <span className="category-count">
+                  {c.count} {c.count === 1 ? "product" : "products"}
+                </span>
+              </span>
               <ArrowRight size={16} aria-hidden="true" />
-            </span>
-            <span className="category-count">
-              {c.count} {c.count === 1 ? "product" : "products"}
             </span>
           </a>
         </li>

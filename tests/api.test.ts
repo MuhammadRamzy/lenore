@@ -1299,6 +1299,66 @@ describe("finance subledger", () => {
 });
 
 describe("website controls", () => {
+  it("lets admins set, show, hide and remove a collection cover", async () => {
+    await create({ code: "COV-1", category: "Basin mixers", published: true });
+    // Smallest bytes the server recognises as WebP.
+    const webp = new Uint8Array([
+      ...new TextEncoder().encode("RIFF"),
+      8,
+      0,
+      0,
+      0,
+      ...new TextEncoder().encode("WEBPVP8 "),
+    ]);
+    const put = (name: string, body: BodyInit) =>
+      SELF.fetch(
+        `${base}/api/admin/website/categories/cover?name=${encodeURIComponent(name)}`,
+        {
+          method: "PUT",
+          headers: { Origin: base, Cookie: `lenore_session=${token}` },
+          body,
+        },
+      );
+    expect((await put("No such range", webp)).status).toBe(404);
+    expect((await put("Basin mixers", "not an image")).status).toBe(400);
+    const saved = await put("basin mixers", webp);
+    expect(saved.status).toBe(200);
+    const { coverUrl } = (await saved.json()) as { coverUrl: string };
+    const listing = (await (await request("/admin/website")).json()) as {
+      categories: { name: string; coverUrl: string | null }[];
+    };
+    expect(
+      listing.categories.find((x) => x.name === "Basin mixers")?.coverUrl,
+    ).toBe(coverUrl);
+    expect(await (await SELF.fetch(`${base}/collections`)).text()).toContain(
+      coverUrl,
+    );
+    const anon = () => SELF.fetch(`${base}${coverUrl}`);
+    // A hidden collection's cover is for admins only (checked before the
+    // first public fetch, which the edge then caches like product photos).
+    await bindings.DB.prepare(
+      "UPDATE website_categories SET hidden=1 WHERE name='Basin mixers'",
+    ).run();
+    expect((await anon()).status).toBe(404);
+    expect((await request(coverUrl.replace("/api", ""))).status).toBe(200);
+    await bindings.DB.prepare(
+      "UPDATE website_categories SET hidden=0 WHERE name='Basin mixers'",
+    ).run();
+    expect((await anon()).status).toBe(200);
+    const removed = await request(
+      "/admin/website/categories/cover?name=Basin%20mixers",
+      undefined,
+      "DELETE",
+    );
+    expect(await removed.json()).toEqual({ removed: true });
+    const after = (await (await request("/admin/website")).json()) as {
+      categories: { name: string; coverUrl: string | null }[];
+    };
+    expect(
+      after.categories.find((x) => x.name === "Basin mixers")?.coverUrl,
+    ).toBeNull();
+    expect(await bindings.MEDIA.get(coverUrl.split("/").pop()!)).toBeNull();
+  });
   it("hides products, collections, prices and stock from the public only", async () => {
     const shown = await create({
       code: "W-1",
@@ -2967,6 +3027,8 @@ describe("role access matrix", () => {
     ["POST", `/admin/team/${X}/sign-out`],
     ["GET", "/admin/website"],
     ["PUT", "/admin/website/settings"],
+    ["PUT", "/admin/website/categories/cover?name=X"],
+    ["DELETE", "/admin/website/categories/cover?name=X"],
     ["GET", "/admin/erp/invoices"],
     ["GET", "/admin/erp/customers"],
     ["POST", "/admin/erp/customers"],

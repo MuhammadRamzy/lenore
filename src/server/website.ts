@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import type { CatalogueProduct } from "../shared";
 import type { AppEnv } from "./access";
-import { actorName } from "./products";
+import { actorName, imageType } from "./products";
 
 export type WebsiteSettings = {
   showProducts: boolean;
@@ -39,8 +39,16 @@ export const ON_WEBSITE = `published=1 AND on_website=1 AND NOT EXISTS (
 /** Category order and intros set by admins; unlisted categories follow by name. */
 export async function categoryLayout(db: D1Database) {
   const rows = await db
-    .prepare("SELECT name,hidden,sort_order,intro FROM website_categories")
-    .all<{ name: string; hidden: number; sort_order: number; intro: string }>();
+    .prepare(
+      "SELECT name,hidden,sort_order,intro,cover_key FROM website_categories",
+    )
+    .all<{
+      name: string;
+      hidden: number;
+      sort_order: number;
+      intro: string;
+      cover_key: string | null;
+    }>();
   return new Map(rows.results.map((r) => [r.name.toLowerCase(), r]));
 }
 
@@ -90,6 +98,7 @@ routes.get("/admin/website", async (c) => {
         hidden: !!l?.hidden,
         sortOrder: l?.sort_order ?? 1000,
         intro: l?.intro ?? "",
+        coverUrl: l?.cover_key ? `/api/media/${l.cover_key}` : null,
         products: items.length,
         onWebsite: items.filter((r) => r.published && r.on_website).length,
       };
@@ -167,6 +176,57 @@ routes.put("/admin/website/categories", async (c) => {
     ),
   ]);
   return c.json(await readWebsite(db));
+});
+/** A collection's cover: raw image bytes (the admin converts to WebP first). */
+routes.put("/admin/website/categories/cover", async (c) => {
+  const name = z.string().trim().min(1).max(80).parse(c.req.query("name"));
+  const db = c.env.DB;
+  const real = await db
+    .prepare(
+      "SELECT category FROM products WHERE category=? COLLATE NOCASE LIMIT 1",
+    )
+    .bind(name)
+    .first<{ category: string }>();
+  if (!real) return c.json({ error: "No collection has this name." }, 404);
+  const bytes = new Uint8Array(await c.req.arrayBuffer());
+  if (bytes.length > 5 * 1024 * 1024)
+    return c.json({ error: "Choose an image under 5 MB." }, 413);
+  const type = imageType(bytes);
+  if (!type) return c.json({ error: "Choose a JPEG, PNG or WebP image." }, 400);
+  // A new key every time: covers are cached as immutable.
+  const key = crypto.randomUUID();
+  await c.env.MEDIA.put(key, bytes, { httpMetadata: { contentType: type } });
+  const old = await db
+    .prepare("SELECT cover_key FROM website_categories WHERE name=?")
+    .bind(real.category)
+    .first<{ cover_key: string | null }>();
+  await db
+    .prepare(
+      `INSERT INTO website_categories(name,cover_key) VALUES(?,?)
+      ON CONFLICT(name) DO UPDATE SET cover_key=excluded.cover_key`,
+    )
+    .bind(real.category, key)
+    .run();
+  if (old?.cover_key)
+    await c.env.MEDIA.delete(old.cover_key).catch(() => undefined);
+  return c.json({ coverUrl: `/api/media/${key}` });
+});
+routes.delete("/admin/website/categories/cover", async (c) => {
+  const name = z.string().trim().min(1).max(80).parse(c.req.query("name"));
+  const db = c.env.DB;
+  const row = await db
+    .prepare(
+      "SELECT name,cover_key FROM website_categories WHERE name=? COLLATE NOCASE",
+    )
+    .bind(name)
+    .first<{ name: string; cover_key: string | null }>();
+  if (!row?.cover_key) return c.json({ removed: false });
+  await db
+    .prepare("UPDATE website_categories SET cover_key=NULL WHERE name=?")
+    .bind(row.name)
+    .run();
+  await c.env.MEDIA.delete(row.cover_key).catch(() => undefined);
+  return c.json({ removed: true });
 });
 routes.put("/admin/website/products", async (c) => {
   const d = z

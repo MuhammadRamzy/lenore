@@ -1,5 +1,12 @@
 # Handoff
 
+## Claude · 2026-10-23 · Collection covers, managed in the admin
+
+- Migration 0015: `website_categories.cover_key`. Admin: Workspace → Website → Collections has a Cover column (preview, Upload/Replace, Remove; browser converts to WebP, 1000 px). API: `PUT/DELETE /api/admin/website/categories/cover?name=` (admin only; new immutable key per upload; old object deleted on replace/remove, like product media). `/api/media/:key` serves covers publicly unless the collection is hidden (same 7-day edge-cache caveat as product photos).
+- Website tiles (home, Collections) show the cover in a 4:5 frame with the product count; collections without a cover fall back to a product photo.
+- Seeded production and local with the 30 designed covers from the Instagram export (`instagram-category-index.json`, all `complete`; 800×1000 WebP, ~46 KB). Live: 30/30 collections have covers.
+- Checks: 83 API + 11 browser tests (cover upload/visibility/remove, role matrix), admin replace tested end to end locally. Deployed (a42fcf3e).
+
 ## Claude · 2026-10-23 · Product media sync (359 assets)
 
 - Source: `~/Downloads/Lenore-Product-Visuals` (`UPLOAD-READINESS.json` ready=true, 19:49). All 359 masters (296 photos 1254×1254, 63 posters 1122×1402) matched `upload-asset-inventory.json` SHA256; every code matched the app exactly (no filename/fuzzy matching). Pending review flags: none (FTR 6351 source-limited exception, KRS 601 false positive; SH 108 A resolved in `root-final-corrections-report.json`).
@@ -15,7 +22,8 @@
 - Built-in generation is working again. All359 product outputs now saved in `~/Downloads/Lenore-Product-Visuals` (296 square photos,63 posters, including7poster-derived RSD photos). Initial integrity/aspect/hash audit passes all359.
 - Root corrections saved for SC106 old engraving, SH108A duplicate views/actual square model and size, SH103A actual small head/arm and suffix code. SH103C/D/E poster geometry corrections complete.63poster OCR/text audit plus visual adjudications passed; no unresolved product issue. Instagram covers running separately; owner requests more creative, varied editorial layouts. All30category captions include `https://lenoretrading.com`.
 - Prepared `CLAUDE-UPLOAD-PROMPT.md`,359-entry `upload-asset-inventory.json`,36-entry `changed-since-2026-10-22.json` and explicit `UPLOAD-READINESS.json` (ready=true). Claude must reconcile all media, replace stale occupied slots using fresh immutable URLs and refreshed thumbnails, preserve business data and existing visibility. User will pass prompt to Claude; this task has made no app/database/deployment writes.
-- All359 masters and category copies verified; final upload inventory regenerated after corrections. Owner received the Claude prompt. Continue:finish Instagram covers/creative refreshes, update cover queue/index/audits and final docs.12products lack all original media; preserve those app slots.
+- Scope added by owner:5profilepictures for Instagram/Facebook/WhatsApp business/groups;4socialbanner/story exports; GoogleAds general brand campaign selected explicitly (12clean productmarketing images:5landscape,5square,2portrait, plus2officiallogoexports and drafttextassets). Save new assets in separate Downloads subfolders; never include them in359app-uploadinventory.
+- All359 masters and category copies verified; final upload inventory regenerated after corrections. Owner received the Claude prompt. Instagram30covers complete, including4creative refreshes, typography-only Wallmixer correction and exactPillar cock case; independent cover text audit passes.5socialprofiles+2Googlelogoexports saved;4socialbanners/storyexports saved. Continue:finish12GoogleAds marketing images, audit newpack, finalize docs.12products lack all original media; preserve those app slots.
 
 ## Claude · 2026-10-22 · Stock count repeats, new products from purchases
 

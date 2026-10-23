@@ -2212,6 +2212,7 @@ type WebsiteData = {
     hidden: boolean;
     sortOrder: number;
     intro: string;
+    coverUrl: string | null;
     products: number;
     onWebsite: number;
   }[];
@@ -2226,6 +2227,85 @@ type WebsiteData = {
     hasPhoto: boolean;
   }[];
 };
+/** A collection's cover: preview, upload or replace, remove. Saved immediately. */
+function CoverCell({
+  name,
+  url,
+  onChange,
+  onError,
+}: {
+  name: string;
+  url: string | null;
+  onChange: (url: string | null, message: string) => void;
+  onError: (message: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const path = `/api/admin/website/categories/cover?name=${encodeURIComponent(name)}`;
+  return (
+    <div className="cover-cell">
+      {url ? (
+        <img src={url} alt={`${name} cover`} width={48} height={60} />
+      ) : (
+        <span className="cover-empty" aria-hidden="true" />
+      )}
+      <label className="button small">
+        {busy ? "Saving…" : url ? "Replace" : "Upload"}
+        <input
+          type="file"
+          accept="image/*"
+          className="visually-hidden"
+          disabled={busy}
+          aria-label={`${url ? "Replace" : "Upload"} cover for ${name}`}
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (!file) return;
+            setBusy(true);
+            try {
+              // 1000 px is sharp at twice the tile size and keeps pages light.
+              const r = await fetch(path, {
+                method: "PUT",
+                body: await toWebp(file, 1000),
+              });
+              const d = (await r.json()) as {
+                coverUrl?: string;
+                error?: string;
+              };
+              if (!r.ok || !d.coverUrl)
+                throw new Error(d.error ?? "Upload failed.");
+              onChange(d.coverUrl, `Cover saved for ${name}`);
+            } catch (err) {
+              onError(errorMessage(err));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
+      </label>
+      {url && (
+        <button
+          type="button"
+          className="text-button"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await api(path.replace("/api", ""), undefined, "DELETE");
+              onChange(null, `Cover removed from ${name}`);
+            } catch (err) {
+              onError(errorMessage(err));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Remove
+        </button>
+      )}
+    </div>
+  );
+}
+
 /** Admin control over the public website, separate from the sales catalogue. */
 export function WebsitePanel({ notify }: { notify: (m: string) => void }) {
   const [data, setData] = useState<WebsiteData | null>(null);
@@ -2381,7 +2461,8 @@ export function WebsitePanel({ notify }: { notify: (m: string) => void }) {
           <h2>Collections</h2>
           <p className="muted">
             Hide a whole collection, set the order collections appear in (lower
-            first) and add a short introduction for its page.
+            first), add a short introduction for its page and choose its cover
+            (portrait 4:5 works best). Covers save straight away.
           </p>
           <div
             className="data-table-wrap"
@@ -2393,6 +2474,7 @@ export function WebsitePanel({ notify }: { notify: (m: string) => void }) {
               <thead>
                 <tr>
                   <th scope="col">Collection</th>
+                  <th scope="col">Cover</th>
                   <th scope="col">Show</th>
                   <th scope="col">Order</th>
                   <th scope="col">Introduction</th>
@@ -2413,6 +2495,21 @@ export function WebsitePanel({ notify }: { notify: (m: string) => void }) {
                         <small className="muted block">
                           {c.onWebsite} of {c.products} on website
                         </small>
+                      </td>
+                      <td>
+                        <CoverCell
+                          name={c.name}
+                          url={c.coverUrl}
+                          onChange={(coverUrl, message) => {
+                            setCategories((list) =>
+                              list.map((x) =>
+                                x.name === c.name ? { ...x, coverUrl } : x,
+                              ),
+                            );
+                            notify(message);
+                          }}
+                          onError={setError}
+                        />
                       </td>
                       <td>
                         <input
@@ -2460,7 +2557,7 @@ export function WebsitePanel({ notify }: { notify: (m: string) => void }) {
                 })}
                 {!categories.length && (
                   <tr>
-                    <td colSpan={4} className="muted">
+                    <td colSpan={5} className="muted">
                       Add products to create collections.
                     </td>
                   </tr>

@@ -216,6 +216,9 @@ async function siteData(c: AppContext, withProducts = true): Promise<SiteData> {
         slug: categorySlug(name),
         count: items.length,
         intro: layout.get(name.toLowerCase())?.intro ?? "",
+        coverUrl: layout.get(name.toLowerCase())?.cover_key
+          ? `/api/media/${layout.get(name.toLowerCase())!.cover_key}`
+          : null,
         cover: pick
           ? {
               code: pick.code,
